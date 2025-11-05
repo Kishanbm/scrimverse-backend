@@ -41,43 +41,43 @@ cache:
 test:
   stage: test
   image: python:3.13.7
-  
+
   services:
     - postgres:16-alpine
     - redis:7-alpine
-  
+
   before_script:
     - echo "Installing system dependencies..."
     - apt-get update -qy
     - apt-get install -y postgresql-client redis-tools
-    
+
     - echo "Setting up Python virtual environment..."
     - python -m venv .venv
     - source .venv/bin/activate
-    
+
     - echo "Installing Python dependencies..."
     - pip install --upgrade pip
     - pip install -r requirements.txt
-    
+
     - echo "Waiting for PostgreSQL to be ready..."
     - until pg_isready -h postgres -U postgres; do echo "Waiting for postgres..."; sleep 2; done
-    
+
     - echo "Waiting for Redis to be ready..."
     - until redis-cli -h redis ping; do echo "Waiting for redis..."; sleep 2; done
-    
+
     - echo "Running migrations..."
     - python manage.py makemigrations
     - python manage.py migrate
-  
+
   script:
     - echo "Running pytest with coverage..."
     - pytest --cov=. --cov-report=term --cov-report=html --cov-report=xml -v
-    
+
     - echo "Test coverage summary:"
     - coverage report
-  
+
   coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
-  
+
   artifacts:
     when: always
     paths:
@@ -88,7 +88,7 @@ test:
         coverage_format: cobertura
         path: coverage.xml
     expire_in: 30 days
-  
+
   only:
     - main
     - master
@@ -99,26 +99,26 @@ test:
 lint:
   stage: lint
   image: python:3.13.7
-  
+
   before_script:
     - pip install --upgrade pip
     - pip install flake8 pylint black isort
-  
+
   script:
     - echo "Checking code formatting with black..."
     - black --check --diff . || echo "Black formatting issues found (not failing build)"
-    
+
     - echo "Checking import sorting with isort..."
     - isort --check-only --diff . || echo "Import sorting issues found (not failing build)"
-    
+
     - echo "Running flake8..."
     - flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics || echo "Flake8 errors found (not failing build)"
-    
+
     - echo "Running pylint on main packages..."
     - pylint accounts tournaments --exit-zero || echo "Pylint issues found (not failing build)"
-  
+
   allow_failure: true
-  
+
   only:
     - main
     - master
@@ -128,33 +128,32 @@ lint:
 check_migrations:
   stage: test
   image: python:3.13.7
-  
+
   services:
     - postgres:16-alpine
     - redis:7-alpine
-  
+
   before_script:
     - echo "Installing system dependencies..."
     - apt-get update -qy
     - apt-get install -y postgresql-client
-    
+
     - echo "Setting up Python virtual environment..."
     - python -m venv .venv
     - source .venv/bin/activate
-    
+
     - echo "Installing Python dependencies..."
     - pip install --upgrade pip
     - pip install -r requirements.txt
-    
+
     - echo "Waiting for PostgreSQL to be ready..."
     - until pg_isready -h postgres -U postgres; do echo "Waiting for postgres..."; sleep 2; done
-  
+
   script:
     - echo "Checking for missing migrations..."
     - python manage.py makemigrations --check --dry-run --no-input
-  
+
   only:
     - main
     - master
     - merge_requests
-
