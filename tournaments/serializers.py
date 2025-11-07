@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from accounts.serializers import HostProfileSerializer, PlayerProfileSerializer
@@ -8,11 +10,47 @@ from .models import HostRating, Scrim, ScrimRegistration, Tournament, Tournament
 class TournamentSerializer(serializers.ModelSerializer):
     host = HostProfileSerializer(read_only=True)
     host_id = serializers.IntegerField(write_only=True, required=False)
+    banner_image = serializers.ImageField(
+        max_length=None, use_url=True, required=False, allow_null=True, allow_empty_file=True
+    )
+    tournament_file = serializers.FileField(
+        max_length=None, use_url=True, required=False, allow_null=True, allow_empty_file=True
+    )
+    rounds = serializers.JSONField(required=False)
 
     class Meta:
         model = Tournament
         fields = "__all__"
-        read_only_fields = ("current_participants", "created_at", "updated_at")
+        read_only_fields = ("current_participants", "created_at", "updated_at", "host")
+
+    def validate_banner_image(self, value):
+        """Validate banner image size (max 5MB)"""
+        if value and value.size > 5 * 1024 * 1024:  # 5MB
+            raise serializers.ValidationError("Banner image size should not exceed 5MB")
+        return value
+
+    def validate_rounds(self, value):
+        """Validate rounds structure"""
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError:
+                raise serializers.ValidationError("Invalid JSON format for rounds")
+
+        if not value or len(value) == 0:
+            raise serializers.ValidationError("At least one round is required")
+
+        for i, round_data in enumerate(value):
+            if "round" not in round_data:
+                raise serializers.ValidationError(f"Round {i+1} must have 'round' field")
+            if i == 0:
+                if "max_teams" not in round_data:
+                    raise serializers.ValidationError("First round must have 'max_teams' field")
+            else:
+                if "qualifying_teams" not in round_data:
+                    raise serializers.ValidationError(f"Round {i+1} must have 'qualifying_teams' field")
+
+        return value
 
 
 class TournamentListSerializer(serializers.ModelSerializer):

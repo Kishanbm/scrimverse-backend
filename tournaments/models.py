@@ -15,31 +15,71 @@ class Tournament(models.Model):
         ("cancelled", "Cancelled"),
     )
 
+    GAME_CHOICES = (
+        ("BGMI", "BGMI"),
+        ("Valorant", "Valorant"),
+        ("COD", "Call of Duty"),
+        ("Freefire", "Free Fire"),
+        ("CS2", "Counter-Strike 2"),
+    )
+
+    GAME_FORMAT_CHOICES = (
+        ("Squad", "Squad"),
+        ("Duo", "Duo"),
+        ("Solo", "Solo"),
+    )
+
     host = models.ForeignKey(HostProfile, on_delete=models.CASCADE, related_name="tournaments")
     title = models.CharField(max_length=200)
-    description = models.TextField()
-    game_name = models.CharField(max_length=100)
-    game_mode = models.CharField(max_length=100)  # e.g., "Squad", "Solo", "Duo"
+    description = models.TextField(help_text="Tournament description")
+
+    # Game Details
+    game_name = models.CharField(max_length=100, choices=GAME_CHOICES)
+    game_mode = models.CharField(max_length=100, choices=GAME_FORMAT_CHOICES)  # Squad, Solo, Duo
 
     # Tournament Details
-    max_participants = models.IntegerField()
+    max_participants = models.IntegerField(help_text="Maximum number of teams")
     current_participants = models.IntegerField(default=0)
     entry_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     prize_pool = models.DecimalField(max_digits=10, decimal_places=2)
 
     # Prize Distribution (stored as JSON)
-    prize_distribution = models.JSONField(default=dict)  # {"1st": 5000, "2nd": 3000, "3rd": 2000}
+    prize_distribution = models.JSONField(default=dict, blank=True)  # {"1st": 5000, "2nd": 3000, "3rd": 2000}
 
     # Tournament Schedule
+    tournament_date = models.DateField(help_text="Tournament date", null=True, blank=True)
+    tournament_time = models.TimeField(help_text="Tournament start time", null=True, blank=True)
     registration_start = models.DateTimeField()
     registration_end = models.DateTimeField()
     tournament_start = models.DateTimeField()
     tournament_end = models.DateTimeField()
 
-    # Additional Info
-    rules = models.TextField(blank=True)
+    # Rounds Structure - Dynamic rounds with qualification criteria
+    rounds = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Round structure: [{round: 1, max_teams: 100}, {round: 2, qualifying_teams: 50}, ...]",
+    )
+    # Example: [
+    #   {"round": 1, "max_teams": 100, "qualifying_teams": 50},
+    #   {"round": 2, "max_teams": 50, "qualifying_teams": 20},
+    #   {"round": 3, "max_teams": 20, "qualifying_teams": 1}
+    # ]
+
+    # Rules
+    rules = models.TextField(help_text="Custom rules and regulations")
     requirements = models.JSONField(default=list, blank=True)  # ["Level 40+", "KD > 2.0"]
-    banner_image = models.ImageField(upload_to="tournaments/", blank=True, null=True)
+
+    # Files and Media
+    tournament_file = models.FileField(
+        upload_to="tournaments/files/", blank=True, null=True, help_text="Tournament rules PDF or document"
+    )
+    banner_image = models.ImageField(
+        upload_to="tournaments/banners/", blank=True, null=True, help_text="Tournament banner image (max 5MB)"
+    )
+
+    # Contact
+    discord_id = models.CharField(max_length=100, blank=True, help_text="Discord server ID (optional)")
 
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="upcoming")
@@ -51,6 +91,42 @@ class Tournament(models.Model):
 
     def __str__(self):
         return f"{self.title} - {self.game_name}"
+
+    def get_total_rounds(self):
+        """Get total number of rounds"""
+        return len(self.rounds) if self.rounds else 0
+
+    def update_status(self):
+        """Auto-update status based on current time"""
+        from django.utils import timezone
+
+        now = timezone.now()
+
+        if self.tournament_start <= now < self.tournament_end:
+            if self.status != "ongoing":
+                self.status = "ongoing"
+                self.save(update_fields=["status"])
+        elif now >= self.tournament_end:
+            if self.status != "completed":
+                self.status = "completed"
+                self.save(update_fields=["status"])
+
+        return self.status
+
+    def save(self, *args, **kwargs):
+        """Override save to auto-update status"""
+        # Auto-update status on save
+        if self.pk and "status" not in kwargs.get("update_fields", []):
+            from django.utils import timezone
+
+            now = timezone.now()
+
+            if self.tournament_start <= now < self.tournament_end:
+                self.status = "ongoing"
+            elif now >= self.tournament_end:
+                self.status = "completed"
+
+        super().save(*args, **kwargs)
 
     class Meta:
         db_table = "tournaments"

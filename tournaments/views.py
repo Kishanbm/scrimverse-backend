@@ -1,6 +1,6 @@
 from django.core.cache import cache
 
-from rest_framework import generics, permissions
+from rest_framework import generics, parsers, permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
@@ -47,6 +47,21 @@ class TournamentListView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
 
     def list(self, request, *args, **kwargs):
+        # Update status of all tournaments before listing
+        from django.utils import timezone
+
+        now = timezone.now()
+
+        # Update ongoing tournaments
+        Tournament.objects.filter(tournament_start__lte=now, tournament_end__gt=now, status="upcoming").update(
+            status="ongoing"
+        )
+
+        # Update completed tournaments
+        Tournament.objects.filter(tournament_end__lte=now, status__in=["upcoming", "ongoing"]).update(
+            status="completed"
+        )
+
         # Only cache if no query params (unfiltered list)
         status_param = request.query_params.get("status")
         game_param = request.query_params.get("game")
@@ -99,6 +114,30 @@ class TournamentCreateView(generics.CreateAPIView):
 
     serializer_class = TournamentSerializer
     permission_classes = [IsHostUser]
+    parser_classes = (parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser)
+
+    def create(self, request, *args, **kwargs):
+        """Override create to handle file uploads properly"""
+        # Clean empty file fields (FormData sends empty strings for missing files)
+        data = request.data.copy()
+
+        # Remove empty file fields to prevent validation errors
+        for file_field in ["banner_image", "tournament_file"]:
+            if file_field in data:
+                value = data[file_field]
+                # Remove if it's an empty string or has no size
+                if value == "" or value == "null" or (isinstance(value, str) and not value):
+                    data.pop(file_field)
+                elif hasattr(value, "size") and value.size == 0:
+                    data.pop(file_field)
+
+        serializer = self.get_serializer(data=data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=400)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=201, headers=headers)
 
     def perform_create(self, serializer):
         host_profile = HostProfile.objects.get(user=self.request.user)

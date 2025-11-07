@@ -90,6 +90,25 @@ class TournamentFactory(DjangoModelFactory):
     status = "upcoming"
     rules = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=500))
     banner_image = None
+    tournament_file = None
+    discord_id = factory.LazyAttribute(lambda _: f"discord.gg/{fake.word()}")
+
+    @factory.lazy_attribute
+    def tournament_date(self):
+        return (timezone.now() + timedelta(days=7)).date()
+
+    @factory.lazy_attribute
+    def tournament_time(self):
+        return timezone.now().time()
+
+    @factory.lazy_attribute
+    def rounds(self):
+        """Generate 3-round structure"""
+        return [
+            {"round": 1, "max_teams": self.max_participants, "qualifying_teams": self.max_participants // 2},
+            {"round": 2, "max_teams": self.max_participants // 2, "qualifying_teams": 10},
+            {"round": 3, "max_teams": 10, "qualifying_teams": 1},
+        ]
 
 
 class ScrimFactory(DjangoModelFactory):
