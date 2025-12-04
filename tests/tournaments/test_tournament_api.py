@@ -1,7 +1,7 @@
 """
 Test cases for Tournament API (CRUD operations)
 """
-from datetime import timedelta
+from datetime import time, timedelta
 
 from django.utils import timezone
 
@@ -96,6 +96,9 @@ def test_get_nonexistent_tournament(api_client):
 def test_create_tournament_as_host(host_authenticated_client):
     """Test creating tournament as host"""
     now = timezone.now()
+    tournament_date = (now + timedelta(days=7)).date()
+    tournament_time_obj = time(18, 0)
+
     data = {
         "title": "New Tournament",
         "description": "Test tournament description",
@@ -104,6 +107,14 @@ def test_create_tournament_as_host(host_authenticated_client):
         "max_participants": 100,
         "entry_fee": "50.00",
         "prize_pool": "5000.00",
+        "tournament_date": tournament_date.isoformat(),
+        "tournament_time": tournament_time_obj.isoformat(),
+        "discord_id": "discord.gg/scrimverse",
+        "rounds": [
+            {"round": 1, "max_teams": 100, "qualifying_teams": 50},
+            {"round": 2, "max_teams": 50, "qualifying_teams": 20},
+            {"round": 3, "max_teams": 20, "qualifying_teams": 1},
+        ],
         "registration_start": now.isoformat(),
         "registration_end": (now + timedelta(days=5)).isoformat(),
         "tournament_start": (now + timedelta(days=6)).isoformat(),
@@ -117,7 +128,11 @@ def test_create_tournament_as_host(host_authenticated_client):
 
     tournament = Tournament.objects.get(title="New Tournament")
     assert tournament.game_name == "BGMI"
+    assert tournament.game_mode == "Squad"
     assert tournament.max_participants == 100
+    assert tournament.discord_id == "discord.gg/scrimverse"
+    assert len(tournament.rounds) == 3
+    assert tournament.rounds[0]["qualifying_teams"] == 50
 
 
 @pytest.mark.django_db
@@ -148,6 +163,73 @@ def test_create_tournament_missing_fields(host_authenticated_client):
     response = host_authenticated_client.post("/api/tournaments/create/", data)
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_create_tournament_without_rounds_fails(host_authenticated_client):
+    """Test creating tournament without rounds fails validation"""
+    now = timezone.now()
+
+    data = {
+        "title": "Tournament Without Rounds",
+        "description": "This should fail",
+        "game_name": "BGMI",
+        "game_mode": "Squad",
+        "max_participants": 100,
+        "entry_fee": "50.00",
+        "prize_pool": "5000.00",
+        "rounds": [],  # Empty rounds
+        "registration_start": now.isoformat(),
+        "registration_end": (now + timedelta(days=5)).isoformat(),
+        "tournament_start": (now + timedelta(days=6)).isoformat(),
+        "tournament_end": (now + timedelta(days=6, hours=6)).isoformat(),
+        "rules": "Test rules",
+    }
+
+    response = host_authenticated_client.post("/api/tournaments/create/", data, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_create_tournament_with_invalid_rounds_structure_fails(host_authenticated_client):
+    """Test creating tournament with invalid rounds structure fails"""
+    now = timezone.now()
+
+    data = {
+        "title": "Tournament Invalid Rounds",
+        "description": "Invalid rounds structure",
+        "game_name": "BGMI",
+        "game_mode": "Squad",
+        "max_participants": 100,
+        "entry_fee": "50.00",
+        "prize_pool": "5000.00",
+        "rounds": [
+            {"round": 1, "max_teams": 100},  # Missing qualifying_teams for non-final round
+            {"round": 2},  # Missing required fields
+        ],
+        "registration_start": now.isoformat(),
+        "registration_end": (now + timedelta(days=5)).isoformat(),
+        "tournament_start": (now + timedelta(days=6)).isoformat(),
+        "tournament_end": (now + timedelta(days=6, hours=6)).isoformat(),
+        "rules": "Test rules",
+    }
+
+    response = host_authenticated_client.post("/api/tournaments/create/", data, format="json")
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_tournament_has_banner_image_field(tournament):
+    """Test tournament model has banner_image field"""
+    assert hasattr(tournament, "banner_image")
+
+
+@pytest.mark.django_db
+def test_tournament_has_file_field(tournament):
+    """Test tournament model has tournament_file field"""
+    assert hasattr(tournament, "tournament_file")
 
 
 # Tournament Update Tests
