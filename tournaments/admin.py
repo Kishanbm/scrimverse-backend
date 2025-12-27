@@ -10,12 +10,14 @@ class TournamentAdmin(admin.ModelAdmin):
         "host",
         "game_name",
         "status",
+        "plan_type",
+        "plan_payment_status",
         "current_participants",
         "max_participants",
         "prize_pool",
         "tournament_start",
     )
-    list_filter = ("status", "game_name", "is_featured")
+    list_filter = ("status", "game_name", "is_featured", "plan_type", "plan_payment_status")
     search_fields = ("title", "game_name", "host__organization_name")
     ordering = ("-created_at",)
 

@@ -65,8 +65,9 @@ class TournamentListView(generics.ListAPIView):
 
         status_param = request.query_params.get("status")
         game_param = request.query_params.get("game")
+        category_param = request.query_params.get("category")  # 'all' or 'official'
 
-        if not status_param and not game_param:
+        if not status_param and not game_param and not category_param:
             cache_key = "tournaments:list:all"
             cached_data = cache.get(cache_key)
 
@@ -85,11 +86,20 @@ class TournamentListView(generics.ListAPIView):
         queryset = Tournament.objects.all()
         status_param = self.request.query_params.get("status", None)
         game = self.request.query_params.get("game", None)
+        category = self.request.query_params.get("category", None)
 
         if status_param:
             queryset = queryset.filter(status=status_param)
         if game:
             queryset = queryset.filter(game_name__icontains=game)
+
+        # Filter by category based on plan type
+        # 'all' = basic plan tournaments (listed in All Tournaments)
+        # 'official' = featured and premium plan tournaments (listed in Official Tournaments)
+        if category == "all":
+            queryset = queryset.filter(plan_type="basic")
+        elif category == "official":
+            queryset = queryset.filter(plan_type__in=["featured", "premium"])
 
         return queryset
 

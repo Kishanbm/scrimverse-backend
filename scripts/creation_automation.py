@@ -30,7 +30,7 @@ def register_host():
     return res["tokens"]["access"], res["user"]
 
 
-def create_tournament(token, game_mode, max_teams, title_suffix=""):
+def create_tournament(token, game_mode, max_teams, title_suffix="", plan_type="basic"):
     url = f"{BASE_URL}/tournaments/create/"
     headers = {"Authorization": f"Bearer {token}"}
     now = datetime.now()
@@ -50,6 +50,7 @@ def create_tournament(token, game_mode, max_teams, title_suffix=""):
         "registration_end": (now + timedelta(hours=6)).isoformat(),
         "tournament_start": (now + timedelta(days=1)).isoformat(),
         "tournament_end": (now + timedelta(days=2)).isoformat(),
+        "plan_type": plan_type,  # basic, featured, or premium
         "rounds": [
             {"round": 1, "max_teams": 10, "qualifying_teams": 5},
             {"round": 2, "max_teams": 5, "qualifying_teams": 2},
@@ -145,10 +146,13 @@ if __name__ == "__main__":
 
     # Create tournaments
     print("\n--- Creating Tournaments ---")
-    squad_id = create_tournament(host_token, "Squad", 10)  # 10 teams
-    duo_id = create_tournament(host_token, "Duo", 10)  # 10 teams
-    solo_id = create_tournament(host_token, "Solo", 10)  # 10 teams
-    empty_duo_id = create_tournament(host_token, "Duo", 10, " (Empty)")  # 10 teams
+    # Basic plan tournaments (2)
+    squad_id = create_tournament(host_token, "Squad", 10, plan_type="basic")  # 10 teams - Basic
+    duo_id = create_tournament(host_token, "Duo", 10, plan_type="basic")  # 10 teams - Basic
+
+    # Featured plan tournaments (2)
+    solo_id = create_tournament(host_token, "Solo", 10, plan_type="featured")  # 10 teams - Featured
+    empty_duo_id = create_tournament(host_token, "Duo", 10, " (Empty)", plan_type="featured")  # 10 teams - Featured
 
     # Create 40 players upfront
     print("\n--- Creating 40 Players ---")
@@ -210,10 +214,10 @@ if __name__ == "__main__":
     print("   Password: TestPass123!")
 
     print("\n🏆 Tournaments Created:")
-    print(f"   - Squad: ID {squad_id} (10 teams, {len(squad_players)} players)")
-    print(f"   - Duo: ID {duo_id} (10 teams, {len(duo_players)} players)")
-    print(f"   - Solo: ID {solo_id} (10 teams, {len(solo_players)} players)")
-    print(f"   - Duo (Empty): ID {empty_duo_id} (No registrations)")
+    print(f"   - Squad: ID {squad_id} (10 teams, {len(squad_players)} players) [BASIC PLAN]")
+    print(f"   - Duo: ID {duo_id} (10 teams, {len(duo_players)} players) [BASIC PLAN]")
+    print(f"   - Solo: ID {solo_id} (10 teams, {len(solo_players)} players) [FEATURED PLAN]")
+    print(f"   - Duo (Empty): ID {empty_duo_id} (No registrations) [FEATURED PLAN]")
 
     print(f"\n👥 Total Players Created: {len(all_players)}")
     print(f"\n   Squad Tournament ({len(squad_players)} players):")

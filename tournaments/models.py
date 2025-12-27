@@ -30,6 +30,12 @@ class Tournament(models.Model):
         ("Solo", "Solo"),
     )
 
+    PLAN_CHOICES = (
+        ("basic", "Basic Listing - ₹299"),
+        ("featured", "Featured Listing - ₹499"),
+        ("premium", "Premium + Promotion - ₹799"),
+    )
+
     host = models.ForeignKey(HostProfile, on_delete=models.CASCADE, related_name="tournaments")
     title = models.CharField(max_length=200)
     description = models.TextField(help_text="Tournament description")
@@ -100,6 +106,21 @@ class Tournament(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="upcoming")
     is_featured = models.BooleanField(default=False)
 
+    # Tournament Plan & Pricing
+    plan_type = models.CharField(max_length=20, choices=PLAN_CHOICES, default="basic", help_text="Tournament plan type")
+    plan_price = models.DecimalField(max_digits=10, decimal_places=2, default=299.00, help_text="Plan price in INR")
+    plan_payment_status = models.BooleanField(default=False, help_text="Whether plan payment is completed")
+    plan_payment_id = models.CharField(max_length=100, blank=True, help_text="Payment transaction ID for plan")
+
+    # Premium Features
+    homepage_banner = models.BooleanField(
+        default=False, help_text="Show on homepage banner (Featured and Premium plans)"
+    )
+    promotional_content = models.TextField(blank=True, help_text="Custom promotional content (Premium plan only)")
+    visibility_boost_end = models.DateTimeField(
+        blank=True, null=True, help_text="Extended visibility period end date (Premium plan)"
+    )
+
     # Metadata
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -112,7 +133,26 @@ class Tournament(models.Model):
         return len(self.rounds) if self.rounds else 0
 
     def save(self, *args, **kwargs):
-        """Override save to auto-update status"""
+        """Override save to auto-update status and handle plan logic"""
+        # Set plan price based on plan type
+        plan_prices = {
+            "basic": 299.00,
+            "featured": 499.00,
+            "premium": 799.00,
+        }
+        if self.plan_type in plan_prices:
+            self.plan_price = plan_prices[self.plan_type]
+
+        # Enforce max participants for basic plan
+        if self.plan_type == "basic" and self.max_participants > 100:
+            self.max_participants = 100
+
+        # Auto-set is_featured for featured and premium plans
+        if self.plan_type in ["featured", "premium"]:
+            self.is_featured = True
+        else:
+            self.is_featured = False
+
         # Auto-update status on save
         if self.pk and "status" not in kwargs.get("update_fields", []):
             now = timezone.now()

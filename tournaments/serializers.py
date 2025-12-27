@@ -22,12 +22,28 @@ class TournamentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Tournament
         fields = "__all__"
-        read_only_fields = ("current_participants", "created_at", "updated_at", "host")
+        read_only_fields = (
+            "current_participants",
+            "created_at",
+            "updated_at",
+            "host",
+            "plan_price",
+            "is_featured",
+        )
 
     def validate_banner_image(self, value):
         """Validate banner image size (max 5MB)"""
         if value and value.size > 5 * 1024 * 1024:  # 5MB
             raise serializers.ValidationError("Banner image size should not exceed 5MB")
+        return value
+
+    def validate_max_participants(self, value):
+        """Validate max participants based on plan type"""
+        plan_type = self.initial_data.get("plan_type", "basic")
+        if plan_type == "basic" and value > 100:
+            raise serializers.ValidationError(
+                "Basic plan allows maximum 100 teams. Upgrade to Featured or Premium plan for unlimited teams."
+            )
         return value
 
     def validate_rounds(self, value):
@@ -77,6 +93,8 @@ class TournamentListSerializer(serializers.ModelSerializer):
             "status",
             "banner_image",
             "is_featured",
+            "plan_type",
+            "homepage_banner",
         )
 
     def get_host(self, obj):
