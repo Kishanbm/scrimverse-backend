@@ -23,7 +23,6 @@ def test_player_register_for_tournament(authenticated_client, tournament, player
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "ProGamer", "uid": "UID123456", "rank": "Crown"},
     }
 
     response = authenticated_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
@@ -73,7 +72,6 @@ def test_register_twice_fails(api_client, tournament, test_players):
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "Gamer1", "uid": "UID111"},
     }
     # First registration should succeed
     response1 = client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
@@ -88,7 +86,6 @@ def test_register_twice_fails(api_client, tournament, test_players):
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "Gamer2", "uid": "UID222"},
     }
     response2 = client.post(f"/api/tournaments/{tournament.id}/register/", data2, format="json")
     assert response2.status_code == status.HTTP_400_BAD_REQUEST
@@ -97,7 +94,7 @@ def test_register_twice_fails(api_client, tournament, test_players):
 @pytest.mark.django_db
 def test_host_cannot_register_for_tournament(host_authenticated_client, tournament):
     """Test host cannot register for tournament"""
-    data = {"team_name": "Host Team", "team_members": ["Host1"], "in_game_details": {"ign": "Host", "uid": "UID111"}}
+    data = {"team_name": "Host Team", "player_usernames": ["Host1"]}
     response = host_authenticated_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -106,7 +103,7 @@ def test_host_cannot_register_for_tournament(host_authenticated_client, tourname
 @pytest.mark.django_db
 def test_unauthenticated_cannot_register(api_client, tournament):
     """Test unauthenticated user cannot register"""
-    data = {"team_name": "Team", "team_members": ["Player"], "in_game_details": {"ign": "Gamer", "uid": "UID"}}
+    data = {"team_name": "Team", "player_usernames": ["Player"]}
     response = api_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -121,12 +118,15 @@ def test_unauthenticated_cannot_register(api_client, tournament):
 
 
 @pytest.mark.django_db
-def test_player_register_for_scrim(authenticated_client, scrim):
+def test_player_register_for_scrim(authenticated_client, scrim, player_user, test_players):
     """Test player can register for scrim"""
+    # Scrim is Duo mode by default (requires 2 players)
     data = {
         "team_name": "Scrim Team",
-        "team_members": ["Player1", "Player2"],
-        "in_game_details": {"ign": "ScrimGamer", "uid": "UID789"},
+        "player_usernames": [
+            player_user.username,
+            test_players[0].username,
+        ],
     }
     response = authenticated_client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
 
@@ -138,7 +138,7 @@ def test_player_register_for_scrim(authenticated_client, scrim):
 
 
 @pytest.mark.django_db
-def test_register_twice_for_scrim_fails(api_client, scrim):
+def test_register_twice_for_scrim_fails(api_client, scrim, test_players):
     """Test cannot register for same scrim twice"""
     # Create a player
     player_user = UserFactory(user_type="player")
@@ -149,8 +149,10 @@ def test_register_twice_for_scrim_fails(api_client, scrim):
 
     data = {
         "team_name": "First Team",
-        "team_members": ["Player"],
-        "in_game_details": {"ign": "Gamer1", "uid": "UID111"},
+        "player_usernames": [
+            player_user.username,
+            test_players[0].username,
+        ],
     }
     # First registration
     response1 = client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
@@ -159,8 +161,10 @@ def test_register_twice_for_scrim_fails(api_client, scrim):
     # Second registration should fail
     data2 = {
         "team_name": "Another Team",
-        "team_members": ["Player"],
-        "in_game_details": {"ign": "Gamer2", "uid": "UID222"},
+        "player_usernames": [
+            player_user.username,
+            test_players[0].username,
+        ],
     }
     response2 = client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data2, format="json")
     assert response2.status_code == status.HTTP_400_BAD_REQUEST
@@ -169,7 +173,7 @@ def test_register_twice_for_scrim_fails(api_client, scrim):
 @pytest.mark.django_db
 def test_host_cannot_register_for_scrim(host_authenticated_client, scrim):
     """Test host cannot register for scrim"""
-    data = {"team_name": "Host Scrim Team", "team_members": ["Host"], "in_game_details": {"ign": "Host", "uid": "UID"}}
+    data = {"team_name": "Host Scrim Team", "player_usernames": ["Host"]}
     response = host_authenticated_client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -254,7 +258,6 @@ def test_multiple_players_register(tournament, test_players):
         data = {
             "team_name": f"Team {team_idx}",
             "player_usernames": [p.username for p in team_members],
-            "in_game_details": {"ign": f"Gamer{team_idx}", "uid": f"UID{team_idx}"},
         }
         response = client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 

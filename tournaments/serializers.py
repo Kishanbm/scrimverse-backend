@@ -73,7 +73,7 @@ class TournamentSerializer(serializers.ModelSerializer):
 class TournamentListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list views"""
 
-    host_name = serializers.CharField(source="host.organization_name", read_only=True)
+    host_name = serializers.CharField(source="host.user.username", read_only=True)
     host = serializers.SerializerMethodField()
 
     class Meta:
@@ -98,7 +98,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
         )
 
     def get_host(self, obj):
-        return {"id": obj.host.id, "organization_name": obj.host.organization_name}
+        return {"id": obj.host.id, "username": obj.host.user.username}
 
 
 class ScrimSerializer(serializers.ModelSerializer):
@@ -114,7 +114,7 @@ class ScrimSerializer(serializers.ModelSerializer):
 class ScrimListSerializer(serializers.ModelSerializer):
     """Simplified serializer for list views"""
 
-    host_name = serializers.CharField(source="host.organization_name", read_only=True)
+    host_name = serializers.CharField(source="host.user.username", read_only=True)
 
     class Meta:
         model = Scrim
@@ -139,13 +139,15 @@ class TournamentRegistrationSerializer(serializers.ModelSerializer):
     player_id = serializers.IntegerField(write_only=True, required=False)
     tournament = TournamentListSerializer(read_only=True)
     tournament_id = serializers.IntegerField(write_only=True, required=False)
-    team_name = serializers.CharField(required=True, max_length=100)
+    team_name = serializers.CharField(required=False, max_length=100)
     player_usernames = serializers.ListField(
         child=serializers.CharField(max_length=150),
         write_only=True,
-        required=True,
-        help_text="List of player usernames for the team (e.g., ['player1', 'player2',...] for Squad)",
+        required=False,
+        help_text="List of player usernames for the team",
     )
+    team_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    save_as_team = serializers.BooleanField(write_only=True, default=False)
 
     class Meta:
         model = TournamentRegistration
@@ -153,31 +155,26 @@ class TournamentRegistrationSerializer(serializers.ModelSerializer):
         read_only_fields = ("player", "tournament", "registered_at", "updated_at", "team_members")
 
     def validate_player_usernames(self, value):
-        """Validate that all usernames exist and are unique"""
-        if not value:
-            raise serializers.ValidationError("At least one player username is required")
-
         # Check for duplicates
         if len(value) != len(set(value)):
             raise serializers.ValidationError("Duplicate usernames are not allowed")
 
-        # Check that all usernames exist
-        usernames_set = set(value)
-        existing_users = User.objects.filter(username__in=usernames_set, user_type="player")
-        existing_usernames = set(existing_users.values_list("username", flat=True))
-
-        missing_usernames = usernames_set - existing_usernames
-        if missing_usernames:
-            raise serializers.ValidationError(f"Players not found: {', '.join(missing_usernames)}")
-
+        # We will check if they are users later or just store as strings
+        # to allow unregistered players as well if needed.
         return value
 
     def validate(self, attrs):
         """Validate team size matches tournament game mode"""
         tournament_id = attrs.get("tournament_id") or self.context.get("tournament_id")
         player_usernames = attrs.get("player_usernames", [])
+        team_id = attrs.get("team_id")
 
-        if tournament_id:
+        # Skip validation if using existing team
+        if team_id:
+            return attrs
+
+        # Validate player_usernames only when creating new team
+        if tournament_id and player_usernames:
             try:
                 tournament = Tournament.objects.get(id=tournament_id)
             except Tournament.DoesNotExist:
@@ -198,48 +195,104 @@ class TournamentRegistrationSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        """Create registration with team members"""
-        player_usernames = validated_data.pop("player_usernames")
-        team_name = validated_data.pop("team_name")
+        """Create registration with team logic"""
+        from accounts.models import Team, TeamMember
+
+        player_usernames = validated_data.pop("player_usernames", [])
+        team_name = validated_data.pop("team_name", None)
         tournament_id = validated_data.pop("tournament_id")
         player_id = validated_data.pop("player_id", None)
+        team_id = validated_data.pop("team_id", None)
+        save_as_team = validated_data.pop("save_as_team", False)
 
-        # Get tournament
         tournament = Tournament.objects.get(id=tournament_id)
 
-        # Get registering player (the one making the registration)
+        # Get registering player
         if player_id:
             registering_player = PlayerProfile.objects.get(id=player_id)
         else:
-            # Fallback: use first player in the list
-            registering_user = User.objects.get(username=player_usernames[0], user_type="player")
-            registering_player = registering_user.player_profile
+            # Fallback for API calls if player_id is not provided
+            registering_player = self.context["request"].user.player_profile
 
-        # Validate that registering player is in the team
-        registering_username = registering_player.user.username
-        if registering_username not in player_usernames:
-            raise serializers.ValidationError(
-                {"player_usernames": "The registering player must be included in the team"}
-            )
+        # Check for duplicate registration
+        if TournamentRegistration.objects.filter(tournament=tournament, player=registering_player).exists():
+            raise serializers.ValidationError({"detail": "You have already registered for this tournament."})
 
-        # Get all player profiles for team members
+        # Get team instance if using an existing one
+        team_instance = None
+        if team_id:
+            try:
+                team_instance = Team.objects.get(id=team_id)
+                # Get team name from existing team if not provided
+                if not team_name:
+                    team_name = team_instance.name
+            except Team.DoesNotExist:
+                raise serializers.ValidationError({"team_id": "Team not found"})
+
+        # If they want to save as a team and it's not already an existing team
+        if save_as_team and not team_instance:
+            # Validate that none of the players are already in a permanent team
+            for username in player_usernames:
+                user_obj = User.objects.filter(username=username, user_type="player").first()
+                if user_obj:
+                    existing_permanent_membership = TeamMember.objects.filter(
+                        user=user_obj, team__is_temporary=False
+                    ).exists()
+                    if existing_permanent_membership:
+                        raise serializers.ValidationError(
+                            {
+                                "player_usernames": f"Player {username} is already in a permanent team. "
+                                "All players must be available to create a permanent team."
+                            }
+                        )
+
+            # Create permanent team
+            team_instance = Team.objects.create(name=team_name, captain=registering_player.user)
+            for username in player_usernames:
+                user_obj = User.objects.filter(username=username, user_type="player").first()
+                is_cap = username == registering_player.user.username
+                TeamMember.objects.create(team=team_instance, username=username, user=user_obj, is_captain=is_cap)
+
+        # If it's a one-time team (not saved), we create a temporary team entry
+        # for organizational purposes, or just rely on the strings in registration.
+        # Flow says: "if not : it should exist only for that tournament... should be treated as temporary"
+        if not team_instance:
+            team_instance = Team.objects.create(name=team_name, captain=registering_player.user, is_temporary=True)
+
+        # Prepare team members data for registration record (snapshot)
         team_members_data = []
-        for username in player_usernames:
-            user = User.objects.get(username=username, user_type="player")
-            player_profile = user.player_profile
-            team_members_data.append(
-                {
-                    "id": player_profile.id,
-                    "username": username,
-                    "in_game_name": player_profile.in_game_name,
-                    "email": user.email,
-                }
-            )
+
+        # If using existing team, get members from the team
+        if team_id:
+            for member in team_instance.members.all():
+                team_members_data.append(
+                    {
+                        "username": member.username,
+                        "is_registered": member.user is not None,
+                        "player_id": member.user.player_profile.id
+                        if member.user and hasattr(member.user, "player_profile")
+                        else None,
+                    }
+                )
+        else:
+            # Otherwise, use player_usernames
+            for username in player_usernames:
+                user_obj = User.objects.filter(username=username, user_type="player").first()
+                team_members_data.append(
+                    {
+                        "username": username,
+                        "is_registered": user_obj is not None,
+                        "player_id": user_obj.player_profile.id
+                        if user_obj and hasattr(user_obj, "player_profile")
+                        else None,
+                    }
+                )
 
         # Create registration
         registration = TournamentRegistration.objects.create(
             tournament=tournament,
             player=registering_player,
+            team=team_instance,
             team_name=team_name,
             team_members=team_members_data,
             **validated_data,
@@ -253,11 +306,81 @@ class ScrimRegistrationSerializer(serializers.ModelSerializer):
     player_id = serializers.IntegerField(write_only=True, required=False)
     scrim = ScrimListSerializer(read_only=True)
     scrim_id = serializers.IntegerField(write_only=True, required=False)
+    team_name = serializers.CharField(required=True, max_length=100)
+    player_usernames = serializers.ListField(
+        child=serializers.CharField(max_length=150), write_only=True, required=True
+    )
+    team_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
+    save_as_team = serializers.BooleanField(write_only=True, default=False)
 
     class Meta:
         model = ScrimRegistration
         fields = "__all__"
-        read_only_fields = ("player", "scrim", "registered_at", "updated_at")
+        read_only_fields = ("player", "scrim", "registered_at", "updated_at", "team_members")
+
+    def create(self, validated_data):
+        from accounts.models import Team, TeamMember
+
+        player_usernames = validated_data.pop("player_usernames")
+        team_name = validated_data.pop("team_name")
+        save_as_team = validated_data.pop("save_as_team", False)
+        team_id = validated_data.pop("team_id", None)
+
+        # Extract scrim and player from validated_data (may be IDs or objects)
+        scrim = validated_data.pop("scrim", None)
+        scrim_id = validated_data.pop("scrim_id", None)
+        if not scrim and scrim_id:
+            scrim = Scrim.objects.get(id=scrim_id)
+
+        player = validated_data.pop("player", None)
+        player_id = validated_data.pop("player_id", None)
+        if not player:
+            if player_id:
+                player = PlayerProfile.objects.get(id=player_id)
+            else:
+                player = self.context["request"].user.player_profile
+
+        team_instance = None
+        if team_id:
+            try:
+                team_instance = Team.objects.get(id=team_id)
+            except Team.DoesNotExist:
+                raise serializers.ValidationError({"team_id": "Team not found"})
+
+        if save_as_team and not team_instance:
+            team_instance = Team.objects.create(name=team_name, captain=player.user)
+            for username in player_usernames:
+                user_obj = User.objects.filter(username=username, user_type="player").first()
+                TeamMember.objects.create(
+                    team=team_instance, username=username, user=user_obj, is_captain=(username == player.user.username)
+                )
+
+        if not team_instance:
+            team_instance = Team.objects.create(name=team_name, captain=player.user, is_temporary=True)
+
+        team_members_data = []
+        for username in player_usernames:
+            user_obj = User.objects.filter(username=username, user_type="player").first()
+            team_members_data.append(
+                {
+                    "username": username,
+                    "is_registered": user_obj is not None,
+                    "player_id": user_obj.player_profile.id
+                    if user_obj and hasattr(user_obj, "player_profile")
+                    else None,
+                }
+            )
+
+        registration = ScrimRegistration.objects.create(
+            scrim=scrim,
+            player=player,
+            team=team_instance,
+            team_name=team_name,
+            team_members=team_members_data,
+            **validated_data,
+        )
+
+        return registration
 
 
 class HostRatingSerializer(serializers.ModelSerializer):

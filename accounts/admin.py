@@ -22,13 +22,26 @@ class UserAdmin(BaseUserAdmin):
 
 @admin.register(PlayerProfile)
 class PlayerProfileAdmin(admin.ModelAdmin):
-    list_display = ("in_game_name", "game_id", "total_tournaments_participated", "total_wins", "wallet_balance")
-    search_fields = ("in_game_name", "game_id", "user__email")
+    list_display = ("user", "total_tournaments_participated", "total_wins", "wallet_balance")
+    search_fields = ("user__username", "user__email")
     list_filter = ("skill_level",)
 
 
 @admin.register(HostProfile)
 class HostProfileAdmin(admin.ModelAdmin):
-    list_display = ("organization_name", "user", "total_tournaments_hosted", "rating", "verified")
-    search_fields = ("organization_name", "user__email")
+    list_display = ("user", "total_tournaments_hosted", "rating", "verified")
+    list_display_links = ("user",)
+    list_editable = ("verified",)
+    search_fields = ("user__email", "user__username")
     list_filter = ("verified", "rating")
+    actions = ["verify_hosts", "unverify_hosts"]
+
+    def verify_hosts(self, request, queryset):
+        queryset.update(verified=True)
+
+    verify_hosts.short_description = "Verify selected hosts"
+
+    def unverify_hosts(self, request, queryset):
+        queryset.update(verified=False)
+
+    unverify_hosts.short_description = "Unverify selected hosts"

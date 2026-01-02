@@ -1,6 +1,16 @@
 from django.contrib import admin
 
-from .models import HostRating, Scrim, ScrimRegistration, Tournament, TournamentRegistration
+from .models import (
+    Group,
+    HostRating,
+    Match,
+    MatchScore,
+    RoundScore,
+    Scrim,
+    ScrimRegistration,
+    Tournament,
+    TournamentRegistration,
+)
 
 
 @admin.register(Tournament)
@@ -49,3 +59,35 @@ class HostRatingAdmin(admin.ModelAdmin):
     list_display = ("host", "player", "rating", "created_at")
     list_filter = ("rating",)
     search_fields = ("host__organization_name", "player__in_game_name")
+
+
+@admin.register(Group)
+class GroupAdmin(admin.ModelAdmin):
+    list_display = ("group_name", "tournament", "round_number", "created_at")
+    list_filter = ("round_number",)
+    search_fields = ("group_name", "tournament__title")
+    ordering = ("tournament", "round_number", "group_name")
+
+
+@admin.register(Match)
+class MatchAdmin(admin.ModelAdmin):
+    list_display = ("__str__", "group", "match_number", "status", "match_id", "started_at", "ended_at")
+    list_filter = ("status",)
+    search_fields = ("group__group_name", "match_id")
+    ordering = ("group", "match_number")
+
+
+@admin.register(MatchScore)
+class MatchScoreAdmin(admin.ModelAdmin):
+    list_display = ("team", "match", "wins", "position_points", "kill_points", "total_points")
+    list_filter = ("match__status",)
+    search_fields = ("team__team_name", "match__group__group_name")
+    ordering = ("-total_points",)
+
+
+@admin.register(RoundScore)
+class RoundScoreAdmin(admin.ModelAdmin):
+    list_display = ("team", "tournament", "round_number", "position_points", "kill_points", "total_points")
+    list_filter = ("round_number",)
+    search_fields = ("team__team_name", "tournament__title")
+    ordering = ("tournament", "round_number", "-total_points")

@@ -1,8 +1,18 @@
 from django.urls import path
 
+# Groups and Matches Views
+from .groups_views import (
+    ConfigureRoundView,
+    EndMatchView,
+    RoundGroupsListView,
+    RoundResultsView,
+    StartMatchView,
+    SubmitMatchScoresView,
+)
 from .views import (  # Tournament URLs; Scrim URLs; Registration URLs; Rating URLs
     EndRoundView,
     EndTournamentView,
+    HostDashboardStatsView,
     HostRatingCreateView,
     HostRatingsListView,
     HostTournamentsView,
@@ -36,6 +46,7 @@ from .views import (  # Tournament URLs; Scrim URLs; Registration URLs; Rating U
 urlpatterns = [
     # Platform Stats
     path("stats/platform/", PlatformStatsView.as_view(), name="platform-stats"),
+    path("stats/host/", HostDashboardStatsView.as_view(), name="host-stats"),
     # Tournament endpoints
     path("", TournamentListView.as_view(), name="tournament-list"),
     path("<int:pk>/", TournamentDetailView.as_view(), name="tournament-detail"),
@@ -63,6 +74,21 @@ urlpatterns = [
     path("<int:tournament_id>/select-winner/", SelectWinnerView.as_view(), name="select-winner"),
     path("<int:tournament_id>/stats/", TournamentStatsView.as_view(), name="tournament-stats"),
     path("<int:tournament_id>/end/", EndTournamentView.as_view(), name="end-tournament"),
+    # Groups and Matches Management (NEW)
+    path(
+        "<int:tournament_id>/rounds/<int:round_number>/configure/", ConfigureRoundView.as_view(), name="configure-round"
+    ),
+    path(
+        "<int:tournament_id>/rounds/<int:round_number>/groups/", RoundGroupsListView.as_view(), name="round-groups-list"
+    ),
+    path("<int:tournament_id>/groups/<int:group_id>/matches/start/", StartMatchView.as_view(), name="start-match"),
+    path("<int:tournament_id>/matches/<int:match_id>/end/", EndMatchView.as_view(), name="end-match"),
+    path(
+        "<int:tournament_id>/matches/<int:match_id>/scores/",
+        SubmitMatchScoresView.as_view(),
+        name="submit-match-scores",
+    ),
+    path("<int:tournament_id>/rounds/<int:round_number>/results/", RoundResultsView.as_view(), name="round-results"),
     # Scrim endpoints
     path("scrims/", ScrimListView.as_view(), name="scrim-list"),
     path("scrims/<int:pk>/", ScrimDetailView.as_view(), name="scrim-detail"),

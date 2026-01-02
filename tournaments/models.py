@@ -1,7 +1,7 @@
 from django.db import models
 from django.utils import timezone
 
-from accounts.models import HostProfile, PlayerProfile
+from accounts.models import HostProfile, PlayerProfile, Team
 
 
 class Tournament(models.Model):
@@ -99,9 +99,6 @@ class Tournament(models.Model):
         upload_to="tournaments/banners/", blank=True, null=True, help_text="Tournament banner image (max 5MB)"
     )
 
-    # Contact
-    discord_id = models.CharField(max_length=100, blank=True, help_text="Discord server ID (optional)")
-
     # Status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="upcoming")
     is_featured = models.BooleanField(default=False)
@@ -119,6 +116,11 @@ class Tournament(models.Model):
     promotional_content = models.TextField(blank=True, help_text="Custom promotional content (Premium plan only)")
     visibility_boost_end = models.DateTimeField(
         blank=True, null=True, help_text="Extended visibility period end date (Premium plan)"
+    )
+
+    # System Flags
+    use_groups_system = models.BooleanField(
+        default=True, help_text="Use new groups and matches system (False for legacy tournaments)"
     )
 
     # Metadata
@@ -233,14 +235,16 @@ class TournamentRegistration(models.Model):
 
     tournament = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name="registrations")
     player = models.ForeignKey(PlayerProfile, on_delete=models.CASCADE, related_name="tournament_registrations")
+    team = models.ForeignKey(
+        Team, on_delete=models.SET_NULL, null=True, blank=True, related_name="tournament_registrations"
+    )
 
     # Player Details for Tournament
     team_name = models.CharField(max_length=100, blank=True)
     team_members = models.JSONField(default=list, blank=True)  # List of player details
-    in_game_details = models.JSONField(default=dict)  # {"ign": "", "uid": "", "rank": ""}
 
     # Registration Status
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="confirmed")
     payment_status = models.BooleanField(default=False)
     payment_id = models.CharField(max_length=100, blank=True)
 
@@ -249,7 +253,7 @@ class TournamentRegistration(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.player.in_game_name} - {self.tournament.title}"
+        return f"{self.player.user.username} - {self.tournament.title}"
 
     class Meta:
         db_table = "tournament_registrations"
@@ -258,6 +262,10 @@ class TournamentRegistration(models.Model):
 
 
 class RoundScore(models.Model):
+    """
+    Aggregate scores for a team in a round (sum of all match scores)
+    """
+
     tournament = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name="round_scores")
     round_number = models.IntegerField()
     team = models.ForeignKey(TournamentRegistration, on_delete=models.CASCADE, related_name="round_scores")
@@ -272,6 +280,128 @@ class RoundScore(models.Model):
     def save(self, *args, **kwargs):
         self.total_points = self.position_points + self.kill_points
         super().save(*args, **kwargs)
+
+    def calculate_from_matches(self):
+        """
+        Calculate total points from all match scores in this round's groups
+        """
+        from django.db.models import Sum
+
+        match_totals = MatchScore.objects.filter(
+            match__group__tournament=self.tournament, match__group__round_number=self.round_number, team=self.team
+        ).aggregate(total_pp=Sum("position_points"), total_kp=Sum("kill_points"))
+        self.position_points = match_totals["total_pp"] or 0
+        self.kill_points = match_totals["total_kp"] or 0
+        self.total_points = self.position_points + self.kill_points
+        self.save()
+
+
+class Group(models.Model):
+    """
+    Tournament round group for organizing teams
+    """
+
+    STATUS_CHOICES = (
+        ("waiting", "Waiting"),
+        ("ongoing", "Ongoing"),
+        ("completed", "Completed"),
+    )
+
+    tournament = models.ForeignKey(Tournament, on_delete=models.CASCADE, related_name="groups")
+    round_number = models.IntegerField()
+    group_name = models.CharField(max_length=50)  # "Group A", "Group B", etc.
+    teams = models.ManyToManyField(TournamentRegistration, related_name="tournament_groups")
+    qualifying_teams = models.IntegerField(default=0, help_text="Number of teams that qualify from this group")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="waiting")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("tournament", "round_number", "group_name")
+        db_table = "tournament_groups"
+        ordering = ["round_number", "group_name"]
+
+    def __str__(self):
+        return f"{self.tournament.title} - Round {self.round_number} - {self.group_name}"
+
+    def is_completed(self):
+        """Check if all matches in this group are completed"""
+        return self.matches.filter(status="completed").count() == self.matches.count()
+
+    def get_qualified_teams(self):
+        """Get the top K teams from this group based on round scores"""
+        from django.db.models import Sum
+
+        # Get all teams in this group with their total points
+        team_scores = []
+        for team in self.teams.all():
+            total = (
+                MatchScore.objects.filter(match__group=self, team=team).aggregate(total=Sum("total_points"))["total"]
+                or 0
+            )
+
+            team_scores.append({"team": team, "total_points": total})
+
+        # Sort by total points descending
+        team_scores.sort(key=lambda x: x["total_points"], reverse=True)
+
+        # Return top K teams
+        return [ts["team"] for ts in team_scores[: self.qualifying_teams]]
+
+
+class Match(models.Model):
+    """
+    Individual match within a group
+    """
+
+    STATUS_CHOICES = (
+        ("waiting", "Waiting"),
+        ("ongoing", "Ongoing"),
+        ("completed", "Completed"),
+    )
+
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="matches")
+    match_number = models.IntegerField()  # 1, 2, 3, 4...
+    match_id = models.CharField(max_length=100, blank=True, help_text="Room ID for the match")
+    match_password = models.CharField(max_length=100, blank=True, help_text="Password for the match room")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="waiting")
+    started_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("group", "match_number")
+        db_table = "tournament_matches"
+        ordering = ["group", "match_number"]
+
+    def __str__(self):
+        return f"{self.group.group_name} - Match {self.match_number}"
+
+
+class MatchScore(models.Model):
+    """
+    Team scores for a specific match
+    Note: Wins (chicken dinners) are display-only, not counted in total points
+    """
+
+    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="scores")
+    team = models.ForeignKey(TournamentRegistration, on_delete=models.CASCADE, related_name="match_scores")
+    wins = models.IntegerField(default=0, help_text="Number of chicken dinners (display only, not counted in total)")
+    position_points = models.IntegerField(default=0)
+    kill_points = models.IntegerField(default=0)
+    total_points = models.IntegerField(default=0)
+
+    class Meta:
+        unique_together = ("match", "team")
+        db_table = "tournament_match_scores"
+        ordering = ["-total_points"]
+
+    def save(self, *args, **kwargs):
+        # Total = Position Points + Kill Points only (wins not counted)
+        self.total_points = self.position_points + self.kill_points
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.team.team_name} - {self.match} - {self.total_points} pts"
 
 
 class ScrimRegistration(models.Model):
@@ -288,14 +418,14 @@ class ScrimRegistration(models.Model):
 
     scrim = models.ForeignKey(Scrim, on_delete=models.CASCADE, related_name="registrations")
     player = models.ForeignKey(PlayerProfile, on_delete=models.CASCADE, related_name="scrim_registrations")
+    team = models.ForeignKey(Team, on_delete=models.SET_NULL, null=True, blank=True, related_name="scrim_registrations")
 
     # Player Details for Scrim
     team_name = models.CharField(max_length=100, blank=True)
     team_members = models.JSONField(default=list, blank=True)
-    in_game_details = models.JSONField(default=dict)
 
     # Registration Status
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="confirmed")
     payment_status = models.BooleanField(default=False)
     payment_id = models.CharField(max_length=100, blank=True)
 
@@ -304,7 +434,7 @@ class ScrimRegistration(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.player.in_game_name} - {self.scrim.title}"
+        return f"{self.player.user.username} - {self.scrim.title}"
 
     class Meta:
         db_table = "scrim_registrations"
@@ -328,7 +458,7 @@ class HostRating(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.player.in_game_name} rated {self.host.organization_name}: {self.rating}/5"
+        return f"{self.player.user.username} rated {self.host.user.username}: {self.rating}/5"
 
     class Meta:
         db_table = "host_ratings"

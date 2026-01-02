@@ -7,6 +7,7 @@ from django.utils import timezone
 from rest_framework import generics, parsers, permissions
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounts.models import HostProfile, PlayerProfile, User
 
@@ -372,11 +373,13 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
 
         # Get player_usernames from validated data
         player_usernames = serializer.validated_data.get("player_usernames", [])
+        team_id = serializer.validated_data.get("team_id")
 
-        # Validate that the current user is in the team
-        current_username = self.request.user.username
-        if current_username not in player_usernames:
-            raise ValidationError({"player_usernames": "You must include your own username in the team"})
+        # Validate that the current user is in the team (only when not using existing team_id)
+        if not team_id:
+            current_username = self.request.user.username
+            if current_username not in player_usernames:
+                raise ValidationError({"player_usernames": "You must include your own username in the team"})
 
         # Check if any team member is already registered (check by player profile IDs)
         # Get all player profiles for the team
@@ -923,8 +926,8 @@ class SelectWinnerView(generics.GenericAPIView):
                 "message": "Winner selected successfully!",
                 "winner": {
                     "id": winner_registration.id,
-                    "team_name": winner_registration.team_name or winner_registration.player.in_game_name,
-                    "player_name": winner_registration.player.in_game_name,
+                    "team_name": winner_registration.team_name or winner_registration.player.user.username,
+                    "player_name": winner_registration.player.user.username,
                 },
                 "round": round_num,
             }
@@ -986,9 +989,10 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
     """
     Update specific tournament fields (restricted - host only)
     PUT/PATCH /api/tournaments/<pk>/update-fields/
-    Only allows updating: title, description, rules, discord_id, banner_image
+    Only allows updating: title, description, rules, banner_image
     """
 
+    queryset = Tournament.objects.all()
     serializer_class = TournamentSerializer
     permission_classes = [IsHostUser]
     parser_classes = (parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser)
@@ -1001,7 +1005,7 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
         instance = self.get_object()
 
         # Only allow updating specific fields
-        allowed_fields = ["title", "description", "rules", "discord_id", "banner_image"]
+        allowed_fields = ["title", "description", "rules", "banner_image"]
         data = request.data.copy()
 
         # Filter to only allowed fields
@@ -1031,6 +1035,8 @@ class EndTournamentView(generics.GenericAPIView):
     permission_classes = [IsHostUser]
 
     def post(self, request, tournament_id):
+        from .tasks import update_leaderboard
+
         host_profile = HostProfile.objects.get(user=request.user)
         tournament = Tournament.objects.get(id=tournament_id, host=host_profile)
 
@@ -1044,6 +1050,9 @@ class EndTournamentView(generics.GenericAPIView):
         tournament.current_round = 0
         tournament.save(update_fields=["status", "current_round"])
         cache.delete("tournaments:list:all")
+
+        # Trigger leaderboard update asynchronously
+        update_leaderboard.delay()
 
         message = "Tournament ended successfully"
         if not all_rounds_completed:
@@ -1157,7 +1166,7 @@ class StartTournamentView(generics.GenericAPIView):
     POST /api/tournaments/<tournament_id>/start/
 
     Validates:
-    - All teams are confirmed (no pending teams)
+    - Pending teams will be automatically confirmed upon starting
     - Tournament status is 'upcoming'
 
     Actions:
@@ -1178,17 +1187,8 @@ class StartTournamentView(generics.GenericAPIView):
         if tournament.status != "upcoming":
             return Response({"error": f"Cannot start tournament. Current status: {tournament.status}"}, status=400)
 
-        # Check if all teams are confirmed
-        pending_teams = TournamentRegistration.objects.filter(tournament=tournament, status="pending").count()
-
-        if pending_teams > 0:
-            return Response(
-                {
-                    "error": f"Cannot start tournament. {pending_teams} team(s) still pending approval.",
-                    "pending_count": pending_teams,
-                },
-                status=400,
-            )
+        # Auto-confirm any pending teams before starting
+        TournamentRegistration.objects.filter(tournament=tournament, status="pending").update(status="confirmed")
 
         # Check if starting early
         from django.utils import timezone
@@ -1214,5 +1214,121 @@ class StartTournamentView(generics.GenericAPIView):
                 "current_round": tournament.current_round,
                 "is_early_start": is_early,
                 "scheduled_start": tournament.tournament_start.isoformat() if tournament.tournament_start else None,
+            }
+        )
+
+
+class HostDashboardStatsView(APIView):
+    """
+    Get statistics and data for the host dashboard
+    GET /api/tournaments/stats/host/
+    """
+
+    permission_classes = [IsHostUser]
+
+    def get(self, request):
+        host_profile = HostProfile.objects.get(user=request.user)
+        now = timezone.now()
+        one_week_ago = now - timezone.timedelta(days=7)
+        one_month_ago = now - timezone.timedelta(days=30)
+
+        # Basic Stats
+        active_tournaments = Tournament.objects.filter(host=host_profile, status__in=["upcoming", "ongoing"]).count()
+        live_now_count = Tournament.objects.filter(host=host_profile, status="ongoing").count()
+
+        total_tournaments = Tournament.objects.filter(host=host_profile).count()
+
+        # Total participants (confirmed teams)
+        total_participants = TournamentRegistration.objects.filter(
+            tournament__host=host_profile, status="confirmed"
+        ).count()
+
+        # Growth this week
+        participants_this_week = TournamentRegistration.objects.filter(
+            tournament__host=host_profile, status="confirmed", registered_at__gte=one_week_ago
+        ).count()
+
+        # Revenue (Sum of entry fees for confirmed registrations)
+        revenue_tournaments = (
+            TournamentRegistration.objects.filter(tournament__host=host_profile, status="confirmed").aggregate(
+                total=Sum("tournament__entry_fee")
+            )["total"]
+            or 0
+        )
+        revenue_scrims = (
+            ScrimRegistration.objects.filter(scrim__host=host_profile, status="confirmed").aggregate(
+                total=Sum("scrim__entry_fee")
+            )["total"]
+            or 0
+        )
+        total_revenue = revenue_tournaments + revenue_scrims
+
+        # Monthly growth (Revenue in last 30 days)
+        rev_tournaments_month = (
+            TournamentRegistration.objects.filter(
+                tournament__host=host_profile, status="confirmed", registered_at__gte=one_month_ago
+            ).aggregate(total=Sum("tournament__entry_fee"))["total"]
+            or 0
+        )
+        rev_scrims_month = (
+            ScrimRegistration.objects.filter(
+                scrim__host=host_profile, status="confirmed", registered_at__gte=one_month_ago
+            ).aggregate(total=Sum("scrim__entry_fee"))["total"]
+            or 0
+        )
+        growth_this_month = rev_tournaments_month + rev_scrims_month
+
+        # Avg Participation
+        avg_participation = (total_participants / total_tournaments) if total_tournaments > 0 else 0
+
+        # Live Tournaments
+        live_tournaments = Tournament.objects.filter(host=host_profile, status="ongoing")
+        live_serializer = TournamentListSerializer(live_tournaments, many=True)
+
+        # Upcoming Tournaments
+        upcoming_tournaments = Tournament.objects.filter(host=host_profile, status="upcoming")[:5]
+        upcoming_serializer = TournamentListSerializer(upcoming_tournaments, many=True)
+
+        # Recent Activity (Mocked or aggregated from registrations)
+        recent_registrations = TournamentRegistration.objects.filter(tournament__host=host_profile).order_by(
+            "-registered_at"
+        )[:5]
+
+        recent_activity = []
+        for reg in recent_registrations:
+            recent_activity.append(
+                {
+                    "type": "registration",
+                    "message": f"New team registered for {reg.tournament.title}",
+                    "team_name": reg.team_name or reg.player.in_game_name,
+                    "timestamp": reg.registered_at,
+                }
+            )
+
+        # Add some mock activities if not enough real ones
+        if len(recent_activity) < 3:
+            recent_activity.append(
+                {
+                    "type": "info",
+                    "message": "Welcome to your new dashboard!",
+                    "timestamp": timezone.now(),
+                }
+            )
+
+        return Response(
+            {
+                "stats": {
+                    "active_tournaments": active_tournaments,
+                    "live_now_count": live_now_count,
+                    "total_participants": total_participants,
+                    "participants_weekly_growth": participants_this_week,
+                    "total_revenue": total_revenue,
+                    "revenue_monthly_growth": growth_this_month,
+                    "avg_participation": round(avg_participation, 1),
+                    "growth_percentage": 12.5,  # Mock growth percentage
+                },
+                "live_tournaments": live_serializer.data,
+                "upcoming_tournaments": upcoming_serializer.data,
+                "recent_activity": recent_activity,
             }
         )

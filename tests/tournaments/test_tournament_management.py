@@ -394,7 +394,6 @@ def test_update_tournament_fields_restricted(host_authenticated_client, tourname
         "title": "Updated Title",
         "description": "Updated description",
         "rules": "Updated rules",
-        "discord_id": "discord.gg/updated",
         # Try to update restricted fields
         "max_participants": 200,  # Should be ignored
         "game_name": "Valorant",  # Should be ignored
@@ -407,7 +406,6 @@ def test_update_tournament_fields_restricted(host_authenticated_client, tourname
     assert tournament.title == "Updated Title"
     assert tournament.description == "Updated description"
     assert tournament.rules == "Updated rules"
-    assert tournament.discord_id == "discord.gg/updated"
     # Restricted fields should not be updated (check original values)
     assert tournament.max_participants == original_max_participants
     assert tournament.game_name == original_game_name

@@ -22,8 +22,6 @@ def test_player_registration_success(api_client):
         "password": "TestPass123!",
         "password2": "TestPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "ProGamer",
-        "game_id": "UID123456",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
@@ -36,7 +34,6 @@ def test_player_registration_success(api_client):
     user = User.objects.get(email="newplayer@test.com")
     assert user.user_type == "player"
     assert hasattr(user, "player_profile")
-    assert user.player_profile.in_game_name == "ProGamer"
 
 
 @pytest.mark.auth
@@ -49,8 +46,6 @@ def test_player_registration_password_mismatch(api_client):
         "password": "TestPass123!",
         "password2": "DifferentPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "Gamer",
-        "game_id": "UID123",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
@@ -68,8 +63,6 @@ def test_player_registration_duplicate_email(api_client, player_user):
         "password": "TestPass123!",
         "password2": "TestPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "Gamer",
-        "game_id": "UID123",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
@@ -125,7 +118,6 @@ def test_host_registration_password_mismatch(api_client):
         "password": "TestPass123!",
         "password2": "Wrong123!",
         "phone_number": "9876543210",
-        "organization_name": "Org",
     }
     response = api_client.post("/api/accounts/host/register/", data)
 

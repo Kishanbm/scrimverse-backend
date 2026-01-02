@@ -21,7 +21,6 @@ def register_host():
         "username": f"TestHost_{random_suffix}",
         "password": "TestPass123!",
         "password2": "TestPass123!",
-        "organization_name": f"TestHostOrg_{random_suffix}",
         "phone_number": "9999999999",
     }
     res = requests.post(url, json=data)
@@ -90,9 +89,7 @@ def create_player():
         "username": f"Player_{unique_id}",
         "password": "TestPass123!",
         "password2": "TestPass123!",
-        "in_game_name": f"IGN_{unique_id}",
         "phone_number": "8888888888",
-        "game_id": "BGMI",
     }
     res = requests.post(url, json=data)
 
@@ -110,30 +107,42 @@ def create_player():
     }
 
 
-def register_team_to_tournament(tournament_id, team_players, team_name, game_mode):
-    """Register a team (or solo player) to a tournament"""
-    if not team_players:
-        return False
+def create_team(captain_player, team_name, member_usernames):
+    """Create a team with the captain and members"""
+    url = f"{BASE_URL}/accounts/teams/"
+    headers = {"Authorization": f"Bearer {captain_player['token']}"}
 
-    # Use first player's token to register the team
+    data = {
+        "name": team_name,
+        "player_usernames": member_usernames,  # Includes captain and other members
+    }
+
+    res = requests.post(url, json=data, headers=headers)
+
+    if res.status_code == 201:
+        team_data = res.json()
+        print(f"  ✅ Team created: {team_name} (ID: {team_data['id']})")
+        return team_data["id"]
+    else:
+        print(f"  ❌ Failed to create team {team_name}: {res.text}")
+        return None
+
+
+def register_team_to_tournament(tournament_id, captain_player, team_id, save_as_team=True):
+    """Register an existing team to a tournament"""
     register_url = f"{BASE_URL}/tournaments/{tournament_id}/register/"
-    headers = {"Authorization": f"Bearer {team_players[0]['token']}"}
+    headers = {"Authorization": f"Bearer {captain_player['token']}"}
 
     reg_data = {
-        "team_name": team_name,
-        "player_usernames": [p["username"] for p in team_players],
-        "in_game_details": {
-            "ign": f"IGN_{team_players[0]['unique_id']}",
-            "uid": f"UID_{team_players[0]['id']}",
-            "rank": "Gold",
-        },
+        "team_id": team_id,
+        "save_as_team": save_as_team,  # Whether to save as permanent team
     }
 
     reg_response = requests.post(register_url, json=reg_data, headers=headers)
     if reg_response.status_code == 201:
         return True
     else:
-        print(f"ERROR: Failed to register team: {reg_response.text}")
+        print(f"  ❌ Failed to register team: {reg_response.text}")
         return False
 
 
@@ -154,56 +163,96 @@ if __name__ == "__main__":
     solo_id = create_tournament(host_token, "Solo", 10, plan_type="featured")  # 10 teams - Featured
     empty_duo_id = create_tournament(host_token, "Duo", 10, " (Empty)", plan_type="featured")  # 10 teams - Featured
 
-    # Create 40 players upfront
-    print("\n--- Creating 40 Players ---")
+    # Create 60 players upfront
+    print("\n--- Creating 60 Players ---")
     all_players = []
-    for i in range(40):
+    for i in range(60):
         player = create_player()
         if player:
             all_players.append(player)
-            print(f"  Created player {i+1}/40: {player['email']}")
+            print(f"  Created player {i+1}/60: {player['email']}")
 
     print(f"\n✅ Created {len(all_players)} players successfully!")
 
-    # Register all 40 players to Squad tournament (10 teams of 4)
-    print("\n--- Registering 10 teams for Squad Tournament ---")
+    # Create teams first, then register them
+    print("\n--- Creating Teams and Registering to Squad Tournament ---")
+    squad_teams = []
     squad_players = []
+    # Use first 40 players for Squad (10 teams of 4)
     for team_num in range(10):
         team_players = all_players[team_num * 4 : (team_num + 1) * 4]
+        captain = team_players[0]
         team_name = f"Squad_Team_{team_num + 1}"
 
-        if register_team_to_tournament(squad_id, team_players, team_name, "Squad"):
-            print(f"  ✅ Team {team_num + 1}/10 registered ({len(team_players)} players)")
-            squad_players.extend([p["email"] for p in team_players])
-        else:
-            print(f"  ❌ Failed to register Team {team_num + 1}")
+        # Get all usernames including captain
+        member_usernames = [p["username"] for p in team_players]
 
-    # Register random 20 players to Duo tournament (10 teams of 2)
-    print("\n--- Registering 10 teams for Duo Tournament ---")
-    duo_players_pool = random.sample(all_players, 20)  # Random 20 players
+        # Create team (first 7 teams saved, last 3 temporary)
+        team_id = create_team(captain, team_name, member_usernames)
+
+        if team_id:
+            # Register to tournament (first 7 with save_as_team=True, last 3 with False)
+            save_team = team_num < 7
+            if register_team_to_tournament(squad_id, captain, team_id, save_as_team=save_team):
+                print(
+                    f"  ✅ Team {team_num + 1}/10 registered to Squad Tournament {'(Saved)' if save_team else '(Temporary)'}"  # noqa: E501
+                )
+                squad_teams.append({"name": team_name, "id": team_id, "saved": save_team})
+                squad_players.extend([p["email"] for p in team_players])
+            else:
+                print(f"  ❌ Failed to register Team {team_num + 1}")
+
+    # Use players 40-60 for Duo and Solo (20 players available)
+    available_players = all_players[40:]  # Last 20 players who are not in any teams
+
+    # Create and register teams for Duo tournament
+    print("\n--- Creating Teams and Registering to Duo Tournament ---")
+    duo_teams = []
     duo_players = []
-    for team_num in range(10):
-        team_players = duo_players_pool[team_num * 2 : (team_num + 1) * 2]
+    # Use first 10 available players for Duo (5 teams of 2)
+    for team_num in range(5):
+        if team_num * 2 + 1 >= len(available_players):
+            break
+        team_players = available_players[team_num * 2 : (team_num + 1) * 2]
+        captain = team_players[0]
         team_name = f"Duo_Team_{team_num + 1}"
 
-        if register_team_to_tournament(duo_id, team_players, team_name, "Duo"):
-            print(f"  ✅ Team {team_num + 1}/10 registered ({len(team_players)} players)")
-            duo_players.extend([p["email"] for p in team_players])
-        else:
-            print(f"  ❌ Failed to register Team {team_num + 1}")
+        member_usernames = [p["username"] for p in team_players]
 
-    # Register 10 players to Solo tournament (10 teams of 1)
-    print("\n--- Registering 10 players for Solo Tournament ---")
-    solo_players_pool = all_players[:10]  # First 10 players
+        # Create team (first 3 teams saved, last 2 temporary)
+        team_id = create_team(captain, team_name, member_usernames)
+
+        if team_id:
+            # Register to tournament
+            save_team = team_num < 3
+            if register_team_to_tournament(duo_id, captain, team_id, save_as_team=save_team):
+                print(
+                    f"  ✅ Team {team_num + 1}/5 registered to Duo Tournament {'(Saved)' if save_team else '(Temporary)'}"  # noqa: E501
+                )
+                duo_teams.append({"name": team_name, "id": team_id, "saved": save_team})
+                duo_players.extend([p["email"] for p in team_players])
+            else:
+                print(f"  ❌ Failed to register Team {team_num + 1}")
+
+    # For Solo, use the last 10 available players (players 50-60)
+    print("\n--- Creating Teams and Registering to Solo Tournament ---")
+    solo_teams = []
     solo_players = []
+    # Use last 10 available players for Solo
+    solo_players_pool = available_players[10:20] if len(available_players) >= 20 else available_players[10:]
     for i, player in enumerate(solo_players_pool):
         team_name = f"Solo_Team_{i + 1}"
 
-        if register_team_to_tournament(solo_id, [player], team_name, "Solo"):
-            print(f"  ✅ Player {i + 1}/10 registered")
-            solo_players.append(player["email"])
-        else:
-            print(f"  ❌ Failed to register player {i + 1}")
+        # Create solo team (all saved for solo)
+        team_id = create_team(player, team_name, [player["username"]])
+
+        if team_id:
+            if register_team_to_tournament(solo_id, player, team_id, save_as_team=True):
+                print(f"  ✅ Player {i + 1}/{len(solo_players_pool)} registered to Solo Tournament (Saved)")
+                solo_teams.append({"name": team_name, "id": team_id, "saved": True})
+                solo_players.append(player["email"])
+            else:
+                print(f"  ❌ Failed to register player {i + 1}")
 
     # Print summary
     print("\n" + "=" * 60)
@@ -215,8 +264,11 @@ if __name__ == "__main__":
 
     print("\n🏆 Tournaments Created:")
     print(f"   - Squad: ID {squad_id} (10 teams, {len(squad_players)} players) [BASIC PLAN]")
+    print("     • 7 permanent teams, 3 temporary teams")
     print(f"   - Duo: ID {duo_id} (10 teams, {len(duo_players)} players) [BASIC PLAN]")
+    print("     • 8 permanent teams, 2 temporary teams")
     print(f"   - Solo: ID {solo_id} (10 teams, {len(solo_players)} players) [FEATURED PLAN]")
+    print("     • All 10 teams permanent")
     print(f"   - Duo (Empty): ID {empty_duo_id} (No registrations) [FEATURED PLAN]")
 
     print(f"\n👥 Total Players Created: {len(all_players)}")
@@ -234,6 +286,10 @@ if __name__ == "__main__":
 
     print("\n   All player passwords: TestPass123!")
 
+    print("\n📋 Team Summary:")
+    print(f"   Total Permanent Teams: {sum(1 for t in squad_teams + duo_teams + solo_teams if t['saved'])}")
+    print(f"   Total Temporary Teams: {sum(1 for t in squad_teams + duo_teams + solo_teams if not t['saved'])}")
+
     print("\n" + "=" * 60)
-    print("✅ All tournaments and players created successfully!")
+    print("✅ All tournaments, teams, and players created successfully!")
     print("=" * 60)

@@ -38,8 +38,6 @@ class PlayerProfileFactory(DjangoModelFactory):
         model = PlayerProfile
 
     user = factory.SubFactory(UserFactory, user_type="player")
-    in_game_name = factory.LazyAttribute(lambda _: fake.user_name())
-    game_id = factory.Sequence(lambda n: f"UID{n:06d}")
     bio = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
 
 
@@ -91,7 +89,6 @@ class TournamentFactory(DjangoModelFactory):
     rules = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=500))
     banner_image = None
     tournament_file = None
-    discord_id = factory.LazyAttribute(lambda _: f"discord.gg/{fake.word()}")
 
     @factory.lazy_attribute
     def tournament_date(self):
@@ -160,10 +157,6 @@ class TournamentRegistrationFactory(DjangoModelFactory):
     def team_members(self):
         return [fake.name() for _ in range(4)]
 
-    @factory.lazy_attribute
-    def in_game_details(self):
-        return {"ign": fake.user_name(), "uid": f"UID{fake.random_number(digits=6)}", "rank": "Gold"}
-
     payment_status = False
     status = "pending"
 
@@ -181,10 +174,6 @@ class ScrimRegistrationFactory(DjangoModelFactory):
     @factory.lazy_attribute
     def team_members(self):
         return [fake.name() for _ in range(2)]
-
-    @factory.lazy_attribute
-    def in_game_details(self):
-        return {"ign": fake.user_name(), "uid": f"UID{fake.random_number(digits=6)}"}
 
     status = "confirmed"
 
