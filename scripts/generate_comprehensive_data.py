@@ -233,6 +233,9 @@ def create_completed_tournament(host, teams, tournament_num):
     start_date = timezone.now() - timedelta(days=30 - tournament_num * 10)
     end_date = start_date + timedelta(days=2)
 
+    # Alternate between featured and premium plans
+    plan_type = "premium" if tournament_num % 2 == 1 else "featured"
+
     tournament = Tournament.objects.create(
         title=f"Championship Series {tournament_num}",
         description=f"Professional {game} tournament with top teams",
@@ -249,6 +252,8 @@ def create_completed_tournament(host, teams, tournament_num):
         registration_start=start_date - timedelta(days=7),
         registration_end=start_date - timedelta(days=1),
         status="completed",
+        plan_type=plan_type,
+        plan_payment_status=True,
         rounds=[
             {"round": 1, "qualifying_teams": 24},
             {"round": 2, "qualifying_teams": 12},
@@ -532,6 +537,8 @@ def create_upcoming_tournament(host, teams):
         registration_start=timezone.now() - timedelta(days=5),
         registration_end=timezone.now() + timedelta(days=2),
         status="upcoming",
+        plan_type="premium",
+        plan_payment_status=True,
         rounds=[
             {"round": 1, "qualifying_teams": 24},
             {"round": 2, "qualifying_teams": 12},
@@ -559,21 +566,173 @@ def create_upcoming_tournament(host, teams):
     return tournament
 
 
-def create_upcoming_scrim(host, teams):
-    """Create an upcoming scrim with 25 teams registered"""
-    print(f"\n📅 Creating upcoming scrim...")
+def create_live_scrim(host, teams):
+    """Create a live/ongoing scrim with teams registered and ready to manage"""
+    print(f"\n🔴 Creating LIVE scrim...")
 
     selected_teams = random.sample(list(teams), 25)
 
     game = random.choice(GAMES)
     game_mode = random.choice(GAME_MODES[game])
 
-    start_date = timezone.now() + timedelta(days=1)
+    # Create scrim that started 30 minutes ago and ends in 2.5 hours
+    start_date = timezone.now() - timedelta(minutes=30)
     end_date = start_date + timedelta(hours=3)
 
     scrim = Tournament.objects.create(
-        title="Upcoming Practice Scrim",
-        description=f"Practice session for {game}",
+        title="LIVE Practice Scrim",
+        description=f"Ongoing {game} practice session - Join now!",
+        game_name=game,
+        game_mode=game_mode,
+        host=host.host_profile,
+        event_mode="SCRIM",
+        entry_fee=Decimal("100.00"),
+        prize_pool=Decimal("5000.00"),
+        max_participants=25,
+        current_participants=25,
+        tournament_start=start_date,
+        tournament_end=end_date,
+        registration_start=start_date - timedelta(days=2),
+        registration_end=start_date - timedelta(minutes=5),
+        status="ongoing",
+        rounds=[{"round": 1, "qualifying_teams": 0}],
+        current_round=1,
+        rules="Casual scrim rules - Have fun!",
+    )
+
+    # Register teams
+    registrations = []
+    for team in selected_teams:
+        reg = TournamentRegistration.objects.create(
+            tournament=scrim,
+            player=team.captain.player_profile,
+            team=team,
+            team_name=team.name,
+            team_members=[
+                {"username": member.username, "in_game_name": member.username} for member in team.members.all()
+            ],
+            status="confirmed",
+            payment_status=True,
+        )
+        registrations.append(reg)
+
+    # Create single group with matches
+    group = Group.objects.create(
+        tournament=scrim, round_number=1, group_name="Group A", qualifying_teams=0, status="ongoing"
+    )
+
+    for reg in registrations:
+        group.teams.add(reg)
+
+    # Create 4 matches (max allowed for scrims)
+    # Match 1: Completed
+    # Match 2: Ongoing
+    # Match 3-4: Waiting
+    for match_num in range(1, 5):
+        if match_num == 1:
+            # Completed match
+            match = Match.objects.create(
+                group=group,
+                match_number=match_num,
+                match_id=f"LIVESCRIM{match_num}",
+                match_password=f"PASS{random.randint(1000, 9999)}",
+                status="completed",
+                started_at=start_date + timedelta(minutes=5),
+                ended_at=start_date + timedelta(minutes=30),
+            )
+
+            # Create scores for completed match
+            positions = list(range(1, 26))
+            random.shuffle(positions)
+
+            for idx, reg in enumerate(registrations):
+                position = positions[idx]
+                kills = random.randint(0, 12)
+                position_pts = POSITION_POINTS.get(position, 0)
+                kill_pts = kills
+
+                MatchScore.objects.create(
+                    match=match,
+                    team=reg,
+                    wins=1 if position == 1 else 0,
+                    position_points=position_pts,
+                    kill_points=kill_pts,
+                    total_points=position_pts + kill_pts,
+                )
+
+        elif match_num == 2:
+            # Ongoing match
+            match = Match.objects.create(
+                group=group,
+                match_number=match_num,
+                match_id=f"LIVESCRIM{match_num}",
+                match_password=f"PASS{random.randint(1000, 9999)}",
+                status="ongoing",
+                started_at=timezone.now() - timedelta(minutes=5),
+                ended_at=None,
+            )
+
+            # Create partial scores (some teams have scores, others don't)
+            for idx, reg in enumerate(registrations):
+                if idx < 15:  # Only 15 teams have scores so far
+                    kills = random.randint(0, 8)
+                    MatchScore.objects.create(
+                        match=match,
+                        team=reg,
+                        wins=0,
+                        position_points=0,  # Position not determined yet
+                        kill_points=kills,
+                        total_points=kills,
+                    )
+
+        else:
+            # Waiting matches
+            match = Match.objects.create(
+                group=group,
+                match_number=match_num,
+                match_id=f"LIVESCRIM{match_num}",
+                match_password=f"PASS{random.randint(1000, 9999)}",
+                status="waiting",
+                started_at=None,
+                ended_at=None,
+            )
+
+    # Create round scores based on completed match only
+    for reg in registrations:
+        scores = MatchScore.objects.filter(
+            match__group__tournament=scrim, match__status="completed", team=reg
+        ).aggregate(total_pos=models.Sum("position_points"), total_kills=models.Sum("kill_points"))
+
+        RoundScore.objects.create(
+            tournament=scrim,
+            round_number=1,
+            team=reg,
+            position_points=scores["total_pos"] or 0,
+            kill_points=scores["total_kills"] or 0,
+            total_points=(scores["total_pos"] or 0) + (scores["total_kills"] or 0),
+        )
+
+    print(f"✅ LIVE scrim created with {len(selected_teams)} teams - Match 1 completed, Match 2 ongoing!")
+    return scrim
+
+
+def create_upcoming_scrim(host, teams, scrim_num=1):
+    """Create an upcoming scrim with 25 teams registered"""
+    print(f"\n📅 Creating upcoming scrim #{scrim_num}...")
+
+    selected_teams = random.sample(list(teams), 25)
+
+    game = random.choice(GAMES)
+    game_mode = random.choice(GAME_MODES[game])
+
+    # Vary the start dates for different scrims
+    days_ahead = scrim_num  # Scrim 1 starts in 1 day, Scrim 2 starts in 2 days
+    start_date = timezone.now() + timedelta(days=days_ahead)
+    end_date = start_date + timedelta(hours=3)
+
+    scrim = Tournament.objects.create(
+        title=f"Upcoming Practice Scrim {scrim_num}",
+        description=f"Practice session for {game} - Register now!",
         game_name=game,
         game_mode=game_mode,
         host=host.host_profile,
@@ -585,7 +744,7 @@ def create_upcoming_scrim(host, teams):
         tournament_start=start_date,
         tournament_end=end_date,
         registration_start=timezone.now() - timedelta(days=2),
-        registration_end=timezone.now() + timedelta(hours=12),
+        registration_end=start_date - timedelta(hours=1),
         status="upcoming",
         rounds=[{"round": 1, "qualifying_teams": 0}],
         current_round=1,
@@ -606,7 +765,7 @@ def create_upcoming_scrim(host, teams):
             payment_status=True,
         )
 
-    print(f"✅ Upcoming scrim created with {len(selected_teams)} teams registered")
+    print(f"✅ Upcoming scrim #{scrim_num} created with {len(selected_teams)} teams registered")
     return scrim
 
 
@@ -694,8 +853,12 @@ def main():
     # Create 1 upcoming tournament
     create_upcoming_tournament(host, teams)
 
-    # Create 1 upcoming scrim
-    create_upcoming_scrim(host, teams)
+    # Create 1 LIVE scrim (ongoing)
+    create_live_scrim(host, teams)
+
+    # Create 2 upcoming scrims
+    for i in range(1, 3):
+        create_upcoming_scrim(host, teams, scrim_num=i)
 
     print("\n" + "=" * 60)
     print("✅ DATA GENERATION COMPLETE!")
@@ -708,6 +871,7 @@ def main():
     )
     print(f"  - Completed Scrims: {Tournament.objects.filter(event_mode='SCRIM', status='completed').count()}")
     print(f"  - Upcoming Tournaments: {Tournament.objects.filter(event_mode='TOURNAMENT', status='upcoming').count()}")
+    print(f"  - LIVE Scrims: {Tournament.objects.filter(event_mode='SCRIM', status='ongoing').count()}")
     print(f"  - Upcoming Scrims: {Tournament.objects.filter(event_mode='SCRIM', status='upcoming').count()}")
     print(f"\n🔑 Login Credentials:")
     print(f"  Host: host@scrimverse.com / password123")
