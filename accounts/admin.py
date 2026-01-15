@@ -5,6 +5,207 @@ from django.utils.html import format_html
 from .models import HostProfile, PlayerProfile, Team, TeamJoinRequest, TeamMember, TeamStatistics, User
 
 
+# Proxy model for Aadhar Verification (for dedicated admin interface)
+class AadharVerification(HostProfile):
+    """Proxy model for Aadhar card verification management"""
+
+    class Meta:
+        proxy = True
+        verbose_name = "Aadhar Verification"
+        verbose_name_plural = "Aadhar Verifications"
+
+
+@admin.register(AadharVerification)
+class AadharVerificationAdmin(admin.ModelAdmin):
+    """Dedicated admin interface for Aadhar card verification"""
+
+    list_display = [
+        "host_name",
+        "email",
+        "phone_number",
+        "uploaded_at_display",
+        "verification_status_badge",
+        "aadhar_preview",
+    ]
+    list_display_links = ["host_name"]
+    list_filter = ["verification_status", ("aadhar_uploaded_at", admin.DateFieldListFilter)]
+    search_fields = ["user__username", "user__email", "user__phone_number"]
+    ordering = ["-aadhar_uploaded_at"]
+
+    readonly_fields = [
+        "user",
+        "aadhar_uploaded_at",
+        "total_tournaments_hosted",
+        "rating",
+        "total_ratings",
+        "verified",
+        "aadhar_front_large_preview",
+        "aadhar_back_large_preview",
+    ]
+
+    fieldsets = (
+        (
+            "Host Information",
+            {
+                "fields": ("user", "total_tournaments_hosted", "rating", "verified"),
+            },
+        ),
+        (
+            "Aadhar Card Images",
+            {
+                "fields": (
+                    "aadhar_uploaded_at",
+                    "aadhar_front_large_preview",
+                    "aadhar_back_large_preview",
+                ),
+                "description": "Review the Aadhar card images carefully before approving.",
+            },
+        ),
+        (
+            "Verification Decision",
+            {
+                "fields": ("verification_status", "verification_notes"),
+                "description": "Approve or reject the verification. Add notes if rejecting.",
+            },
+        ),
+    )
+
+    actions = ["approve_verification", "reject_verification"]
+
+    def get_queryset(self, request):
+        """Show only hosts who have uploaded Aadhar cards"""
+        qs = super().get_queryset(request)
+        return qs.exclude(aadhar_card_front="").exclude(aadhar_card_back="")
+
+    def host_name(self, obj):
+        """Display host username"""
+        return obj.user.username
+
+    host_name.short_description = "Host Name"
+    host_name.admin_order_field = "user__username"
+
+    def email(self, obj):
+        """Display host email"""
+        return obj.user.email
+
+    email.short_description = "Email"
+    email.admin_order_field = "user__email"
+
+    def phone_number(self, obj):
+        """Display host phone number"""
+        return obj.user.phone_number or "N/A"
+
+    phone_number.short_description = "Phone"
+
+    def uploaded_at_display(self, obj):
+        """Display upload timestamp"""
+        if obj.aadhar_uploaded_at:
+            return obj.aadhar_uploaded_at.strftime("%b %d, %Y %I:%M %p")
+        return "Not uploaded"
+
+    uploaded_at_display.short_description = "Uploaded At"
+    uploaded_at_display.admin_order_field = "aadhar_uploaded_at"
+
+    def verification_status_badge(self, obj):
+        """Display verification status as badge"""
+        colors = {
+            "pending": "#ffc107",
+            "approved": "#28a745",
+            "rejected": "#dc3545",
+        }
+        color = colors.get(obj.verification_status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 5px 12px; '
+            'border-radius: 4px; font-weight: bold; font-size: 11px;">{}</span>',
+            color,
+            obj.verification_status.upper(),
+        )
+
+    verification_status_badge.short_description = "Status"
+
+    def aadhar_preview(self, obj):
+        """Display small preview thumbnails"""
+        if obj.aadhar_card_front and obj.aadhar_card_back:
+            return format_html(
+                '<div style="display: flex; gap: 5px;">'
+                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Front"/>'
+                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Back"/>'
+                "</div>",
+                obj.aadhar_card_front.url,
+                obj.aadhar_card_back.url,
+            )
+        return "No images"
+
+    aadhar_preview.short_description = "Preview"
+
+    def aadhar_front_large_preview(self, obj):
+        """Display large Aadhar front image preview"""
+        if obj.aadhar_card_front:
+            return format_html(
+                '<div style="margin: 10px 0;">'
+                '<a href="{}" target="_blank">'
+                '<img src="{}" style="max-width: 600px; max-height: 400px; border: 2px solid #ddd; '
+                'padding: 10px; background: #f9f9f9; border-radius: 8px; cursor: pointer;" />'
+                "</a>"
+                '<p style="margin-top: 5px; color: #666; font-size: 12px;">Click image to view full size in new tab</p>'
+                "</div>",
+                obj.aadhar_card_front.url,
+                obj.aadhar_card_front.url,
+            )
+        return format_html('<p style="color: #dc3545;">No front image uploaded</p>')
+
+    aadhar_front_large_preview.short_description = "Aadhar Card - Front Side"
+
+    def aadhar_back_large_preview(self, obj):
+        """Display large Aadhar back image preview"""
+        if obj.aadhar_card_back:
+            return format_html(
+                '<div style="margin: 10px 0;">'
+                '<a href="{}" target="_blank">'
+                '<img src="{}" style="max-width: 600px; max-height: 400px; border: 2px solid #ddd; '
+                'padding: 10px; background: #f9f9f9; border-radius: 8px; cursor: pointer;" />'
+                "</a>"
+                '<p style="margin-top: 5px; color: #666; font-size: 12px;">Click image to view full size in new tab</p>'
+                "</div>",
+                obj.aadhar_card_back.url,
+                obj.aadhar_card_back.url,
+            )
+        return format_html('<p style="color: #dc3545;">No back image uploaded</p>')
+
+    aadhar_back_large_preview.short_description = "Aadhar Card - Back Side"
+
+    def approve_verification(self, request, queryset):
+        """Approve Aadhar verification for selected hosts"""
+        updated = queryset.update(verification_status="approved", verified=True)
+        self.message_user(
+            request,
+            f"✅ Successfully approved {updated} host(s). They can now access their dashboard.",
+            level="success",
+        )
+
+    approve_verification.short_description = "✅ Approve Selected Verifications"
+
+    def reject_verification(self, request, queryset):
+        """Reject Aadhar verification for selected hosts"""
+        updated = queryset.update(verification_status="rejected", verified=False)
+        self.message_user(
+            request,
+            f"❌ Rejected {updated} host(s). Please add rejection notes in each host's detail page.",
+            level="warning",
+        )
+
+    reject_verification.short_description = "❌ Reject Selected Verifications"
+
+    def has_add_permission(self, request):
+        """Disable add functionality (this is for verification only)"""
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        """Disable delete functionality (use Host Profiles for that)"""
+        return False
+
+
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     """Enhanced User Admin"""
@@ -187,15 +388,56 @@ class PlayerProfileAdmin(admin.ModelAdmin):
 class HostProfileAdmin(admin.ModelAdmin):
     """Enhanced Host Profile Admin"""
 
-    list_display = ["user_display", "tournaments_hosted", "rating_display", "verified_badge"]
+    list_display = [
+        "user_display",
+        "tournaments_hosted",
+        "rating_display",
+        "verified_badge",
+        "verification_status_badge",
+    ]
     list_display_links = ["user_display"]
     list_editable = []  # Removed verified_badge since it's a display method, not a field
     search_fields = ["user__email", "user__username", "bio"]
-    list_filter = ["verified", "rating", ("user__created_at", admin.DateFieldListFilter)]
+    list_filter = ["verified", "verification_status", "rating", ("user__created_at", admin.DateFieldListFilter)]
 
-    readonly_fields = ["total_tournaments_hosted", "rating", "total_ratings"]
+    readonly_fields = [
+        "total_tournaments_hosted",
+        "rating",
+        "total_ratings",
+        "aadhar_uploaded_at",
+        "aadhar_front_preview",
+        "aadhar_back_preview",
+    ]
 
-    actions = ["verify_hosts", "unverify_hosts", "export_hosts_csv"]
+    fieldsets = (
+        (
+            "User Information",
+            {
+                "fields": ("user", "bio", "website"),
+            },
+        ),
+        (
+            "Statistics",
+            {
+                "fields": ("total_tournaments_hosted", "rating", "total_ratings", "verified"),
+            },
+        ),
+        (
+            "Aadhar Verification",
+            {
+                "fields": (
+                    "verification_status",
+                    "aadhar_uploaded_at",
+                    "aadhar_front_preview",
+                    "aadhar_back_preview",
+                    "verification_notes",
+                ),
+                "classes": ("collapse",),
+            },
+        ),
+    )
+
+    actions = ["verify_hosts", "unverify_hosts", "approve_verification", "reject_verification", "export_hosts_csv"]
 
     def user_display(self, obj):
         """Display user with link"""
@@ -243,6 +485,51 @@ class HostProfileAdmin(admin.ModelAdmin):
 
     verified_badge.short_description = "Verified"
 
+    def verification_status_badge(self, obj):
+        """Display verification status as badge"""
+        colors = {
+            "pending": "#ffc107",
+            "approved": "#28a745",
+            "rejected": "#dc3545",
+        }
+        color = colors.get(obj.verification_status, "#6c757d")
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 10px; '
+            'border-radius: 3px; font-weight: bold;">{}</span>',
+            color,
+            obj.verification_status.upper(),
+        )
+
+    verification_status_badge.short_description = "Aadhaar Verification Status"
+
+    def aadhar_front_preview(self, obj):
+        """Display Aadhar front image preview"""
+        if obj.aadhar_card_front:
+            return format_html(
+                '<a href="{}" target="_blank">'
+                '<img src="{}" style="max-width: 300px; max-height: 200px; border: 1px solid #ddd; padding: 5px;" />'
+                "</a>",
+                obj.aadhar_card_front.url,
+                obj.aadhar_card_front.url,
+            )
+        return "No image uploaded"
+
+    aadhar_front_preview.short_description = "Aadhar Card (Front)"
+
+    def aadhar_back_preview(self, obj):
+        """Display Aadhar back image preview"""
+        if obj.aadhar_card_back:
+            return format_html(
+                '<a href="{}" target="_blank">'
+                '<img src="{}" style="max-width: 300px; max-height: 200px; border: 1px solid #ddd; padding: 5px;" />'
+                "</a>",
+                obj.aadhar_card_back.url,
+                obj.aadhar_card_back.url,
+            )
+        return "No image uploaded"
+
+    aadhar_back_preview.short_description = "Aadhar Card (Back)"
+
     def verify_hosts(self, request, queryset):
         """Verify selected hosts"""
         updated = queryset.update(verified=True)
@@ -257,6 +544,23 @@ class HostProfileAdmin(admin.ModelAdmin):
 
     unverify_hosts.short_description = "Unverify Hosts"
 
+    def approve_verification(self, request, queryset):
+        """Approve Aadhar verification for selected hosts"""
+        updated = queryset.update(verification_status="approved", verified=True)
+        self.message_user(request, f"{updated} host(s) verification approved.")
+
+    approve_verification.short_description = "✓ Approve Verification"
+
+    def reject_verification(self, request, queryset):
+        """Reject Aadhar verification for selected hosts"""
+        updated = queryset.update(verification_status="rejected", verified=False)
+        self.message_user(
+            request,
+            f"{updated} host(s) verification rejected. Please add rejection notes in the host profile.",
+        )
+
+    reject_verification.short_description = "✗ Reject Verification"
+
     def export_hosts_csv(self, request, queryset):
         """Export hosts to CSV"""
         import csv
@@ -267,7 +571,7 @@ class HostProfileAdmin(admin.ModelAdmin):
         response["Content-Disposition"] = 'attachment; filename="hosts.csv"'
 
         writer = csv.writer(response)
-        writer.writerow(["Username", "Email", "Tournaments", "Rating", "Verified", "Website"])
+        writer.writerow(["Username", "Email", "Tournaments", "Rating", "Verified", "Aadhaar Verification Status", "Website"])
 
         for host in queryset:
             writer.writerow(
@@ -277,6 +581,7 @@ class HostProfileAdmin(admin.ModelAdmin):
                     host.total_tournaments_hosted,
                     f"{host.rating:.1f}",
                     "Yes" if host.verified else "No",
+                    host.verification_status,
                     host.website or "N/A",
                 ]
             )
@@ -285,6 +590,7 @@ class HostProfileAdmin(admin.ModelAdmin):
         return response
 
     export_hosts_csv.short_description = "Export to CSV"
+
 
 
 # Inline admin for team members

@@ -522,8 +522,16 @@ class RoundResultsView(generics.GenericAPIView):
                 standings = TournamentGroupService.calculate_group_standings(group)
                 all_final_standings.extend(standings)
 
-            # Sort all teams by total points
-            all_final_standings.sort(key=lambda x: x["total_points"], reverse=True)
+            # Sort all teams using the same tiebreaking logic as calculate_group_standings
+            # This ensures consistent rankings even when all teams have 0 points
+            all_final_standings.sort(
+                key=lambda x: (
+                    -x["total_points"],  # Higher points first
+                    -x["wins"],  # More wins breaks ties
+                    -x["kill_points"],  # More kills breaks ties
+                    x["team_name"],  # Alphabetical as final tiebreaker
+                )
+            )
             winner = all_final_standings[0] if all_final_standings else None
 
             # Update tournament winner
@@ -539,6 +547,7 @@ class RoundResultsView(generics.GenericAPIView):
                     "round_number": round_number,
                     "is_final_round": True,
                     "groups": results,
+                    "results": all_final_standings,  # Return full sorted standings
                     "winner": winner,
                     "tournament_completed": True,
                 }
@@ -595,3 +604,99 @@ class RoundResultsView(generics.GenericAPIView):
                     "next_round": round_number + 1,
                 }
             )
+
+
+class GetTeamPlayersView(generics.GenericAPIView):
+    """
+    Get all players/members for a specific team registration in a tournament
+    GET /api/tournaments/<tournament_id>/teams/<registration_id>/players/
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, tournament_id, registration_id):
+        try:
+            tournament = Tournament.objects.get(id=tournament_id)
+            registration = TournamentRegistration.objects.select_related('team', 'player__user').get(
+                id=registration_id, tournament=tournament
+            )
+        except (Tournament.DoesNotExist, TournamentRegistration.DoesNotExist):
+            return Response({"error": "Tournament or team registration not found"}, status=404)
+
+        players_data = []
+
+        # Try to get players from team_members JSON field first
+        team_members = registration.team_members or []
+        
+        if team_members:
+            from accounts.models import User
+            
+            # Enrich with player profile data from team_members JSON
+            for member in team_members:
+                # Try to get player by ID first, then by username
+                player_id = member.get("id")
+                username = member.get("username")
+                
+                player_profile = None
+                
+                if player_id:
+                    try:
+                        player_profile = PlayerProfile.objects.select_related("user").get(id=player_id)
+                    except PlayerProfile.DoesNotExist:
+                        pass
+                
+                if not player_profile and username:
+                    try:
+                        user = User.objects.get(username=username, user_type='player')
+                        player_profile = user.player_profile
+                    except (User.DoesNotExist, PlayerProfile.DoesNotExist, AttributeError):
+                        pass
+                
+                if player_profile:
+                    players_data.append(
+                        {
+                            "id": player_profile.id,
+                            "username": player_profile.user.username,
+                            "preferred_games": player_profile.preferred_games,
+                            "bio": player_profile.bio,
+                            "profile_picture": (
+                                player_profile.user.profile_picture.url if player_profile.user.profile_picture else None
+                            ),
+                            "is_captain": player_profile.id == registration.player_id,
+                        }
+                    )
+        
+        # If no players from team_members, try to get from Team model
+        elif registration.team:
+            from accounts.models import TeamMember
+            
+            # Get all team members from the Team
+            team_members_qs = TeamMember.objects.filter(team=registration.team).select_related('user', 'user__player_profile')
+            
+            for team_member in team_members_qs:
+                try:
+                    player_profile = team_member.user.player_profile
+                    players_data.append(
+                        {
+                            "id": player_profile.id,
+                            "username": team_member.user.username,
+                            "preferred_games": player_profile.preferred_games,
+                            "bio": player_profile.bio,
+                            "profile_picture": (
+                                player_profile.user.profile_picture.url if player_profile.user.profile_picture else None
+                            ),
+                            "is_captain": team_member.is_captain,
+                        }
+                    )
+                except (PlayerProfile.DoesNotExist, AttributeError):
+                    continue
+
+        return Response(
+            {
+                "tournament_id": tournament.id,
+                "registration_id": registration.id,
+                "team_name": registration.team_name,
+                "players": players_data,
+                "total_players": len(players_data),
+            }
+        )
