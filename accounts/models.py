@@ -1,6 +1,8 @@
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
+from accounts.validators import validate_aadhar_image
+
 
 class User(AbstractUser):
     """
@@ -55,6 +57,12 @@ class HostProfile(models.Model):
     Extended profile for hosts/organizers
     """
 
+    VERIFICATION_STATUS_CHOICES = (
+        ("pending", "Pending"),
+        ("approved", "Approved"),
+        ("rejected", "Rejected"),
+    )
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="host_profile")
     bio = models.TextField(blank=True)
     website = models.URLField(blank=True)
@@ -62,6 +70,29 @@ class HostProfile(models.Model):
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0.00)  # Out of 5
     total_ratings = models.IntegerField(default=0)
     verified = models.BooleanField(default=False)
+
+    # Aadhar Card Verification Fields
+    aadhar_card_front = models.ImageField(
+        upload_to="aadhar_cards/",
+        blank=True,
+        null=True,
+        validators=[validate_aadhar_image],
+        help_text="Front side of Aadhar card (max 5MB, formats: JPG, JPEG, PNG, WEBP)",
+    )
+    aadhar_card_back = models.ImageField(
+        upload_to="aadhar_cards/",
+        blank=True,
+        null=True,
+        validators=[validate_aadhar_image],
+        help_text="Back side of Aadhar card (max 5MB, formats: JPG, JPEG, PNG, WEBP)",
+    )
+    aadhar_uploaded_at = models.DateTimeField(null=True, blank=True, help_text="Timestamp when Aadhar was uploaded")
+    verification_status = models.CharField(
+        max_length=20, choices=VERIFICATION_STATUS_CHOICES, default="pending", help_text="Verification status"
+    )
+    verification_notes = models.TextField(
+        blank=True, help_text="Admin notes for verification (e.g., rejection reason)"
+    )
 
     def __str__(self):
         return f"Host: {self.user.username}"

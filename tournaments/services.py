@@ -172,8 +172,19 @@ class TournamentGroupService:
                 }
             )
 
-        # Sort by total points descending
-        standings.sort(key=lambda x: x["total_points"], reverse=True)
+        # Sort by multiple criteria for consistent tiebreaking:
+        # 1. Total points (descending)
+        # 2. Wins (descending)
+        # 3. Kill points (descending)
+        # 4. Team name (ascending, for final tiebreaker)
+        standings.sort(
+            key=lambda x: (
+                -x["total_points"],  # Higher points first
+                -x["wins"],  # More wins breaks ties
+                -x["kill_points"],  # More kills breaks ties
+                x["team_name"],  # Alphabetical as final tiebreaker
+            )
+        )
 
         return standings
 

@@ -17,6 +17,7 @@ from accounts.views import (
     PlayerRegistrationView,
     PlayerUsernameSearchView,
     TeamViewSet,
+    UploadAadharView,
     UserDetailView,
 )
 
@@ -37,6 +38,7 @@ urlpatterns = [
     path("player/profile/me/", CurrentPlayerProfileView.as_view(), name="current-player-profile"),
     path("host/profile/<int:pk>/", HostProfileView.as_view(), name="host-profile"),
     path("host/profile/me/", CurrentHostProfileView.as_view(), name="current-host-profile"),
+    path("host/upload-aadhar/", UploadAadharView.as_view(), name="upload-aadhar"),
     # Search
     path("players/search/", PlayerUsernameSearchView.as_view(), name="player-username-search"),
     path("hosts/search/", HostSearchView.as_view(), name="host-search"),

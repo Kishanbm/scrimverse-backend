@@ -337,6 +337,59 @@ class CurrentHostProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+class UploadAadharView(APIView):
+    """
+    Upload Aadhar card for host verification
+    POST /api/accounts/host/upload-aadhar/
+    """
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.user_type != "host":
+            return Response({"error": "Only hosts can upload Aadhar cards"}, status=status.HTTP_403_FORBIDDEN)
+
+        if not hasattr(user, "host_profile"):
+            return Response({"error": "Host profile not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        host_profile = user.host_profile
+
+        # Get uploaded files
+        aadhar_front = request.FILES.get("aadhar_card_front")
+        aadhar_back = request.FILES.get("aadhar_card_back")
+
+        if not aadhar_front or not aadhar_back:
+            return Response(
+                {"error": "Both front and back images of Aadhar card are required"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Validate files using the model's validators
+        from accounts.validators import validate_aadhar_image
+
+        try:
+            validate_aadhar_image(aadhar_front)
+            validate_aadhar_image(aadhar_back)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Update host profile
+        host_profile.aadhar_card_front = aadhar_front
+        host_profile.aadhar_card_back = aadhar_back
+        host_profile.aadhar_uploaded_at = timezone.now()
+        host_profile.verification_status = "pending"
+        host_profile.save()
+
+        return Response(
+            {
+                "message": "Aadhar card uploaded successfully. Your verification is pending admin approval.",
+                "verification_status": host_profile.verification_status,
+                "aadhar_uploaded_at": host_profile.aadhar_uploaded_at,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class CurrentUserView(APIView):
     """
     Get and Update current logged-in user details

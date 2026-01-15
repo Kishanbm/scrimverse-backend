@@ -4,6 +4,7 @@ from django.urls import path
 from tournaments.groups_views import (
     ConfigureRoundView,
     EndMatchView,
+    GetTeamPlayersView,
     RoundGroupsListView,
     RoundResultsView,
     StartMatchView,
@@ -88,6 +89,12 @@ urlpatterns = [
         "<int:tournament_id>/matches/<int:match_id>/scores/",
         SubmitMatchScoresView.as_view(),
         name="submit-match-scores",
+    ),
+    # Team Players
+    path(
+        "<int:tournament_id>/teams/<int:registration_id>/players/",
+        GetTeamPlayersView.as_view(),
+        name="get-team-players",
     ),
     # Host Rating
     path("host/<int:host_id>/rate/", HostRatingCreateView.as_view(), name="host-rate"),

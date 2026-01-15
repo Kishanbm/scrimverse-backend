@@ -184,7 +184,35 @@ class HostProfileSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = HostProfile
-        fields = "__all__"
+        fields = (
+            "id",
+            "user",
+            "bio",
+            "website",
+            "total_tournaments_hosted",
+            "rating",
+            "total_ratings",
+            "verified",
+            "aadhar_card_front",
+            "aadhar_card_back",
+            "aadhar_uploaded_at",
+            "verification_status",
+            "verification_notes",
+            "total_participants",
+            "prize_pool_distributed",
+            "success_rate",
+            "average_rating",
+            "has_user_rated",
+        )
+        read_only_fields = (
+            "id",
+            "rating",
+            "total_ratings",
+            "verified",
+            "aadhar_uploaded_at",
+            "verification_status",
+            "verification_notes",
+        )
 
     def get_total_tournaments_hosted(self, obj):
         return Tournament.objects.filter(host=obj).count()
