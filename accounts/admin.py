@@ -128,8 +128,8 @@ class AadharVerificationAdmin(admin.ModelAdmin):
         if obj.aadhar_card_front and obj.aadhar_card_back:
             return format_html(
                 '<div style="display: flex; gap: 5px;">'
-                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Front"/>'
-                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Back"/>'
+                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Front"/>'  # noqa: E501
+                '<img src="{}" style="width: 60px; height: 40px; object-fit: cover; border: 1px solid #ddd;" title="Back"/>'  # noqa: E501
                 "</div>",
                 obj.aadhar_card_front.url,
                 obj.aadhar_card_back.url,
@@ -203,7 +203,6 @@ class AadharVerificationAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         """Disable delete functionality (use Host Profiles for that)"""
         return False
-
 
 
 @admin.register(User)
@@ -503,7 +502,7 @@ class HostProfileAdmin(admin.ModelAdmin):
     verification_status_badge.short_description = "Aadhaar Verification Status"
 
     def aadhar_front_preview(self, obj):
-        """Display Aadhar front image preview"""
+        """Display Aadhar front image previews"""
         if obj.aadhar_card_front:
             return format_html(
                 '<a href="{}" target="_blank">'
@@ -571,7 +570,9 @@ class HostProfileAdmin(admin.ModelAdmin):
         response["Content-Disposition"] = 'attachment; filename="hosts.csv"'
 
         writer = csv.writer(response)
-        writer.writerow(["Username", "Email", "Tournaments", "Rating", "Verified", "Aadhaar Verification Status", "Website"])
+        writer.writerow(
+            ["Username", "Email", "Tournaments", "Rating", "Verified", "Aadhaar Verification Status", "Website"]
+        )
 
         for host in queryset:
             writer.writerow(
@@ -590,7 +591,6 @@ class HostProfileAdmin(admin.ModelAdmin):
         return response
 
     export_hosts_csv.short_description = "Export to CSV"
-
 
 
 # Inline admin for team members
