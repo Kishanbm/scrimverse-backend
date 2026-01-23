@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     # Local apps
     "accounts",
     "tournaments",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -313,6 +314,11 @@ LOGGING = {
             "propagate": False,
         },
         "tournaments": {
+            "handlers": ["console", "file_api"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "payments": {
             "handlers": ["console", "file_api"],
             "level": "DEBUG",
             "propagate": False,
