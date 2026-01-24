@@ -283,14 +283,16 @@ def check_payment_status(request):
                                 logger.info(
                                     f"Tournament created from payment check: {tournament.id} - {tournament.title}"
                                 )
-                            else:
-                                logger.info(f"Tournament already exists for payment check: {tournament.id}")
+                            # Ensure link exists and is saved
+                            if not payment.tournament:
+                                payment.tournament = tournament
+                                payment.save()
 
-                            # Link payment to tournament
-                            payment.tournament = tournament
+                            logger.info(f"Tournament linked to payment check: {tournament.id}")
 
-                            # Clear tournament_data from meta_info (no longer needed and contains Decimals)
+                            # Clear tournament_data from meta_info (no longer needed)
                             payment.meta_info.pop("tournament_data", None)
+                            payment.save()
 
                             # Invalidate caches
                             cache.delete("tournaments:list:all")
@@ -361,16 +363,16 @@ def check_payment_status(request):
                                 tournament.current_participants += 1
                                 tournament.save()
                                 logger.info(f"Registration created from payment check: {registration.id}")
-                            else:
-                                logger.info(f"Registration already exists for payment check: {registration.id}")
+                            # Ensure link exists
+                            if not payment.registration:
+                                payment.registration = registration
+                                payment.save()
 
-                            # Link payment to registration
-                            payment.registration = registration
-
-                            logger.info(f"Registration created from payment: {registration.id}")
+                            logger.info(f"Registration linked to payment: {registration.id}")
 
                             # Clear registration_data from meta_info (no longer needed)
                             payment.meta_info.pop("registration_data", None)
+                            payment.save()
 
                             # Invalidate caches
                             cache.delete("tournaments:list:all")
@@ -738,8 +740,13 @@ def phonepe_callback(request):
                                 else:
                                     logger.info(f"Registration already exists for order: {merchant_order_id}")
 
+                                # Link payment to registration
+                                payment.registration = registration
+                                logger.info(f"Registration linked from webhook: {registration.id}")
+
                                 # Clear registration_data from meta_info (no longer needed)
                                 payment.meta_info.pop("registration_data", None)
+                                payment.save()
 
                                 # Invalidate caches
                                 cache.delete("tournaments:list:all")
