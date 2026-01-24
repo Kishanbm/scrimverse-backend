@@ -12,7 +12,6 @@ from uuid import uuid4
 from django.core.cache import cache
 from django.db import transaction
 from django.http import JsonResponse
-from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 
 from decouple import config
@@ -231,122 +230,129 @@ def check_payment_status(request):
                         payment.payment_mode = latest_payment.get("payment_mode", "")
                         payment.instrument_type = latest_payment.get("instrument_type", "")
 
-                # Create tournament/registration from pending_data
-                if payment.payment_type in ["tournament_plan", "scrim_plan"] and payment.pending_data:
-                    # Create tournament from pending data
+                # Create tournament/registration from meta_info
+                if payment.payment_type in ["tournament_plan", "scrim_plan"]:
+                    # Get tournament data from meta_info (stored separately, not in udf3)
+                    tournament_data = payment.meta_info.get("tournament_data", {})
+                    if tournament_data:
+                        host_id = tournament_data.pop("host_id", None)
 
-                    tournament_data = payment.pending_data.copy()
-                    host_id = tournament_data.pop("host_id", None)
+                        # Convert datetime strings back to datetime objects
+                        datetime_fields = [
+                            "registration_start",
+                            "registration_end",
+                            "tournament_start",
+                            "tournament_end",
+                        ]
+                        for field in datetime_fields:
+                            if field in tournament_data and isinstance(tournament_data[field], str):
+                                tournament_data[field] = datetime.fromisoformat(tournament_data[field])
 
-                    # Convert datetime strings back to datetime objects
-                    datetime_fields = ["registration_start", "registration_end", "tournament_start", "tournament_end"]
-                    for field in datetime_fields:
-                        if field in tournament_data and isinstance(tournament_data[field], str):
-                            tournament_data[field] = datetime.fromisoformat(tournament_data[field])
+                        # Convert date strings
+                        if "tournament_date" in tournament_data and isinstance(tournament_data["tournament_date"], str):
+                            tournament_data["tournament_date"] = datetime.fromisoformat(
+                                tournament_data["tournament_date"]
+                            ).date()
 
-                    # Convert date strings
-                    if "tournament_date" in tournament_data and isinstance(tournament_data["tournament_date"], str):
-                        tournament_data["tournament_date"] = datetime.fromisoformat(
-                            tournament_data["tournament_date"]
-                        ).date()
+                        # Convert time strings
+                        if "tournament_time" in tournament_data and isinstance(tournament_data["tournament_time"], str):
+                            hour, minute, second = tournament_data["tournament_time"].split(":")
+                            tournament_data["tournament_time"] = time(int(hour), int(minute), int(float(second)))
 
-                    # Convert time strings
-                    if "tournament_time" in tournament_data and isinstance(tournament_data["tournament_time"], str):
-                        hour, minute, second = tournament_data["tournament_time"].split(":")
-                        tournament_data["tournament_time"] = time(int(hour), int(minute), int(float(second)))
+                        # Convert numeric fields back to Decimal
+                        decimal_fields = ["entry_fee", "prize_pool", "plan_price"]
+                        for field in decimal_fields:
+                            if field in tournament_data and not isinstance(tournament_data[field], Decimal):
+                                tournament_data[field] = Decimal(str(tournament_data[field]))
 
-                    # Convert numeric fields back to Decimal
-                    decimal_fields = ["entry_fee", "prize_pool", "plan_price"]
-                    for field in decimal_fields:
-                        if field in tournament_data and not isinstance(tournament_data[field], Decimal):
-                            tournament_data[field] = Decimal(str(tournament_data[field]))
-
-                    if host_id:
-                        host = HostProfile.objects.get(id=host_id)
-                        tournament = Tournament.objects.create(
-                            host=host,
-                            plan_payment_status=True,
-                            plan_payment_id=merchant_order_id,
-                            is_payment_pending=False,
-                            payment_deadline=None,
-                            **tournament_data,
-                        )
-
-                        # Link payment to tournament
-                        payment.tournament = tournament
-                        payment.pending_data = {}  # Clear pending data
-
-                        logger.info(f"Tournament created from payment: {tournament.id} - {tournament.title}")
-
-                        # Invalidate caches
-                        cache.delete("tournaments:list:all")
-                        cache.delete(f"host:dashboard:{host.id}")
-
-                elif payment.payment_type == "entry_fee" and payment.pending_data:
-                    # Create registration from pending data
-
-                    reg_data = payment.pending_data.copy()
-                    tournament_id = reg_data.pop("tournament_id", None)
-                    player_id = reg_data.pop("player_id", None)
-                    team_id = reg_data.pop("team_id", None)
-                    player_usernames = reg_data.pop("player_usernames", [])
-                    team_name = reg_data.pop("team_name", "")
-                    save_as_team = reg_data.pop("save_as_team", False)
-
-                    if tournament_id and player_id:
-                        tournament = Tournament.objects.get(id=tournament_id)
-                        player = PlayerProfile.objects.get(id=player_id)
-
-                        # Create team if needed (same logic as serializer)
-                        team_instance = None
-                        if team_id:
-                            team_instance = Team.objects.get(id=team_id)
-                        elif save_as_team:
-                            team_instance = Team.objects.create(name=team_name, captain=player.user)
-                            for username in player_usernames:
-                                user_obj = User.objects.filter(username=username, user_type="player").first()
-                                is_cap = username == player.user.username
-                                TeamMember.objects.create(
-                                    team=team_instance, username=username, user=user_obj, is_captain=is_cap
-                                )
-                        else:
-                            team_instance = Team.objects.create(name=team_name, captain=player.user, is_temporary=True)
-
-                        # Prepare team members data
-                        team_members_data = []
-                        for username in player_usernames:
-                            user_obj = User.objects.filter(username=username, user_type="player").first()
-                            team_members_data.append(
-                                {
-                                    "username": username,
-                                    "is_registered": user_obj is not None,
-                                    "player_id": user_obj.player_profile.id
-                                    if user_obj and hasattr(user_obj, "player_profile")
-                                    else None,
-                                }
+                        if host_id:
+                            host = HostProfile.objects.get(id=host_id)
+                            tournament = Tournament.objects.create(
+                                host=host,
+                                plan_payment_status=True,
+                                plan_payment_id=merchant_order_id,
+                                **tournament_data,
                             )
 
-                        # Create registration
-                        registration = TournamentRegistration.objects.create(
-                            tournament=tournament,
-                            player=player,
-                            team=team_instance,
-                            team_name=team_name,
-                            team_members=team_members_data,
-                            payment_status=True,
-                            payment_id=merchant_order_id,
-                            is_payment_pending=False,
-                            payment_deadline=None,
-                            **reg_data,
-                        )
+                            # Link payment to tournament
+                            payment.tournament = tournament
 
-                        # Update participant count
-                        tournament.current_participants += 1
-                        tournament.save()
+                            logger.info(f"Tournament created from payment: {tournament.id} - {tournament.title}")
 
-                        # Link payment to registration
-                        payment.registration = registration
-                        payment.pending_data = {}  # Clear pending data
+                            # Invalidate caches
+                            cache.delete("tournaments:list:all")
+                            cache.delete(f"host:dashboard:{host.id}")
+
+                elif payment.payment_type == "entry_fee":
+                    # Get registration data from meta_info (stored separately, not in udf3)
+                    reg_data = payment.meta_info.get("registration_data", {})
+                    if reg_data:
+                        tournament_id = reg_data.pop("tournament_id", None)
+                        player_id = reg_data.pop("player_id", None)
+                        team_id = reg_data.pop("team_id", None)
+                        player_usernames = reg_data.pop("player_usernames", [])
+                        team_name = reg_data.pop("team_name", "")
+                        save_as_team = reg_data.pop("save_as_team", False)
+
+                        if tournament_id and player_id:
+                            tournament = Tournament.objects.get(id=tournament_id)
+                            player = PlayerProfile.objects.get(id=player_id)
+
+                            # Create team if needed (same logic as serializer)
+                            team_instance = None
+                            if team_id:
+                                team_instance = Team.objects.get(id=team_id)
+                            elif save_as_team:
+                                team_instance = Team.objects.create(name=team_name, captain=player.user)
+                                for username in player_usernames:
+                                    user_obj = User.objects.filter(username=username, user_type="player").first()
+                                    is_cap = username == player.user.username
+                                    TeamMember.objects.create(
+                                        team=team_instance, username=username, user=user_obj, is_captain=is_cap
+                                    )
+                            else:
+                                team_instance = Team.objects.create(
+                                    name=team_name, captain=player.user, is_temporary=True
+                                )
+
+                            # Prepare team members data
+                            team_members_data = []
+                            for username in player_usernames:
+                                user_obj = User.objects.filter(username=username, user_type="player").first()
+                                team_members_data.append(
+                                    {
+                                        "username": username,
+                                        "is_registered": user_obj is not None,
+                                        "player_id": user_obj.player_profile.id
+                                        if user_obj and hasattr(user_obj, "player_profile")
+                                        else None,
+                                    }
+                                )
+
+                            # Create registration
+                            registration = TournamentRegistration.objects.create(
+                                tournament=tournament,
+                                player=player,
+                                team=team_instance,
+                                team_name=team_name,
+                                team_members=team_members_data,
+                                payment_status=True,
+                                payment_id=merchant_order_id,
+                                **reg_data,
+                            )
+
+                            # Update participant count
+                            tournament.current_participants += 1
+                            tournament.save()
+
+                            # Link payment to registration
+                            payment.registration = registration
+
+                            logger.info(f"Registration created from payment: {registration.id}")
+
+                            # Invalidate caches
+                            cache.delete("tournaments:list:all")
+                            cache.delete(f"host:dashboard:{tournament.host.id}")
 
                         logger.info(f"Registration created from payment: {registration.id}")
 
@@ -407,27 +413,6 @@ def list_payments(request):
 
     except Exception as e:
         logger.error(f"Error listing payments: {str(e)}")
-        return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def list_pending_payments(request):
-    """
-    List pending/failed payments for the authenticated user
-    Shows payments that can be retried
-    """
-    try:
-        # Get pending or failed payments that haven't expired
-        payments = Payment.objects.filter(
-            user=request.user, status__in=["pending", "failed"], payment_expires_at__gt=timezone.now()
-        ).order_by("-created_at")
-
-        serializer = PaymentSerializer(payments, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        logger.error(f"Error listing pending payments: {str(e)}")
         return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -524,13 +509,21 @@ def phonepe_callback(request):
 
     This endpoint receives callbacks from PhonePe for payment/refund status updates
     """
+    logger.info("=" * 80)
+    logger.info("PhonePe Callback Received")
+    logger.info("=" * 80)
+
     if request.method != "POST":
+        logger.warning(f"Invalid method: {request.method}")
         return JsonResponse({"error": "Method not allowed"}, status=405)
 
     try:
         # Get authorization header and body
         authorization_header = request.headers.get("Authorization", "")
         callback_body = request.body.decode("utf-8")
+
+        logger.info(f"Authorization Header: {authorization_header[:20]}...")
+        logger.info(f"Callback Body: {callback_body}")
 
         # Get configured credentials
         callback_username = config("PHONEPE_CALLBACK_USERNAME", default="")
@@ -552,86 +545,106 @@ def phonepe_callback(request):
         event_type = callback_data.get("event", "")
         payload = callback_data.get("payload", {})
 
-        logger.info(f"Received PhonePe callback: Type={event_type}")
+        logger.info(f"Event Type: {event_type}")
+        logger.info(f"Payload: {json.dumps(payload, indent=2)}")
 
         # Handle different callback types
         with transaction.atomic():
             if event_type in ["checkout.order.completed", "checkout.order.failed"]:
                 # Payment callback
                 merchant_order_id = payload.get("merchantOrderId", "")
+                logger.info(f"Processing payment callback for order: {merchant_order_id}")
 
                 try:
                     payment = Payment.objects.get(merchant_order_id=merchant_order_id)
+                    logger.info(f"Found payment: {payment.id}, Type: {payment.payment_type}, Status: {payment.status}")
 
                     if event_type == "checkout.order.completed":
                         payment.status = "completed"
+                        logger.info("Payment marked as completed")
 
-                        # Create tournament/registration from pending_data (same logic as check_payment_status)
-                        if payment.payment_type in ["tournament_plan", "scrim_plan"] and payment.pending_data:
-                            tournament_data = payment.pending_data.copy()
-                            host_id = tournament_data.pop("host_id", None)
+                        # Create tournament/registration from meta_info
+                        if payment.payment_type in ["tournament_plan", "scrim_plan"]:
+                            logger.info("Processing tournament/scrim creation")
+                            # Get tournament data from meta_info (stored separately, not in udf3)
+                            tournament_data = payment.meta_info.get("tournament_data", {})
+                            logger.info(f"Tournament data found: {bool(tournament_data)}")
+                            logger.info(
+                                f"Tournament data keys: {list(tournament_data.keys()) if tournament_data else 'None'}"
+                            )
 
-                            # Convert datetime strings back to datetime objects
-                            datetime_fields = [
-                                "registration_start",
-                                "registration_end",
-                                "tournament_start",
-                                "tournament_end",
-                            ]
-                            for field in datetime_fields:
-                                if field in tournament_data and isinstance(tournament_data[field], str):
-                                    tournament_data[field] = datetime.fromisoformat(tournament_data[field])
+                            if tournament_data:
+                                host_id = tournament_data.pop("host_id", None)
+                                logger.info(f"Host ID: {host_id}")
 
-                            # Convert date strings
-                            if "tournament_date" in tournament_data and isinstance(
-                                tournament_data["tournament_date"], str
-                            ):
-                                tournament_data["tournament_date"] = datetime.fromisoformat(
-                                    tournament_data["tournament_date"]
-                                ).date()
+                                # Convert datetime strings back to datetime objects
+                                datetime_fields = [
+                                    "registration_start",
+                                    "registration_end",
+                                    "tournament_start",
+                                    "tournament_end",
+                                ]
+                                for field in datetime_fields:
+                                    if field in tournament_data and isinstance(tournament_data[field], str):
+                                        tournament_data[field] = datetime.fromisoformat(tournament_data[field])
 
-                            # Convert time strings
-                            if "tournament_time" in tournament_data and isinstance(
-                                tournament_data["tournament_time"], str
-                            ):
-                                hour, minute, second = tournament_data["tournament_time"].split(":")
-                                tournament_data["tournament_time"] = time(int(hour), int(minute), int(float(second)))
+                                # Convert date strings
+                                if "tournament_date" in tournament_data and isinstance(
+                                    tournament_data["tournament_date"], str
+                                ):
+                                    tournament_data["tournament_date"] = datetime.fromisoformat(
+                                        tournament_data["tournament_date"]
+                                    ).date()
 
-                            # Convert numeric fields back to Decimal
-                            decimal_fields = ["entry_fee", "prize_pool", "plan_price"]
-                            for field in decimal_fields:
-                                if field in tournament_data and not isinstance(tournament_data[field], Decimal):
-                                    tournament_data[field] = Decimal(str(tournament_data[field]))
+                                # Convert time strings
+                                if "tournament_time" in tournament_data and isinstance(
+                                    tournament_data["tournament_time"], str
+                                ):
+                                    hour, minute, second = tournament_data["tournament_time"].split(":")
+                                    tournament_data["tournament_time"] = time(
+                                        int(hour), int(minute), int(float(second))
+                                    )
 
-                            if host_id:
-                                host = HostProfile.objects.get(id=host_id)
-                                tournament = Tournament.objects.create(
-                                    host=host,
-                                    plan_payment_status=True,
-                                    plan_payment_id=merchant_order_id,
-                                    is_payment_pending=False,
-                                    payment_deadline=None,
-                                    **tournament_data,
-                                )
+                                # Convert numeric fields back to Decimal
+                                decimal_fields = ["entry_fee", "prize_pool", "plan_price"]
+                                for field in decimal_fields:
+                                    if field in tournament_data and not isinstance(tournament_data[field], Decimal):
+                                        tournament_data[field] = Decimal(str(tournament_data[field]))
 
-                                # Link payment to tournament
-                                payment.tournament = tournament
-                                payment.pending_data = {}  # Clear pending data
+                                if host_id:
+                                    logger.info(f"Creating tournament with data: {list(tournament_data.keys())}")
+                                    host = HostProfile.objects.get(id=host_id)
+                                    tournament = Tournament.objects.create(
+                                        host=host,
+                                        plan_payment_status=True,
+                                        plan_payment_id=merchant_order_id,
+                                        **tournament_data,
+                                    )
+                                    logger.info(
+                                        f"✅ Tournament created successfully: {tournament.id} - {tournament.title}"
+                                    )
 
-                                logger.info(f"Tournament created from webhook: {tournament.id} - {tournament.title}")
+                                    # Link payment to tournament
+                                    payment.tournament = tournament
+
+                                    logger.info(
+                                        f"Tournament created from webhook: {tournament.id} - {tournament.title}"
+                                    )
 
                                 # Invalidate caches
                                 cache.delete("tournaments:list:all")
                                 cache.delete(f"host:dashboard:{host.id}")
 
-                        elif payment.payment_type == "entry_fee" and payment.pending_data:
-                            reg_data = payment.pending_data.copy()
-                            tournament_id = reg_data.pop("tournament_id", None)
-                            player_id = reg_data.pop("player_id", None)
-                            team_id = reg_data.pop("team_id", None)
-                            player_usernames = reg_data.pop("player_usernames", [])
-                            team_name = reg_data.pop("team_name", "")
-                            save_as_team = reg_data.pop("save_as_team", False)
+                        elif payment.payment_type == "entry_fee":
+                            # Get registration data from meta_info (stored separately, not in udf3)
+                            reg_data = payment.meta_info.get("registration_data", {})
+                            if reg_data:
+                                tournament_id = reg_data.pop("tournament_id", None)
+                                player_id = reg_data.pop("player_id", None)
+                                team_id = reg_data.pop("team_id", None)
+                                player_usernames = reg_data.pop("player_usernames", [])
+                                team_name = reg_data.pop("team_name", "")
+                                save_as_team = reg_data.pop("save_as_team", False)
 
                             if tournament_id and player_id:
                                 tournament = Tournament.objects.get(id=tournament_id)
@@ -677,8 +690,6 @@ def phonepe_callback(request):
                                     team_members=team_members_data,
                                     payment_status=True,
                                     payment_id=merchant_order_id,
-                                    is_payment_pending=False,
-                                    payment_deadline=None,
                                     **reg_data,
                                 )
 
@@ -688,7 +699,6 @@ def phonepe_callback(request):
 
                                 # Link payment to registration
                                 payment.registration = registration
-                                payment.pending_data = {}  # Clear pending data
 
                                 logger.info(f"Registration created from webhook: {registration.id}")
 
@@ -741,11 +751,21 @@ def phonepe_callback(request):
                 except Refund.DoesNotExist:
                     logger.error(f"Refund not found for callback: {merchant_refund_id}")
 
+        logger.info("=" * 80)
+        logger.info("✅ Callback processed successfully")
+        logger.info("=" * 80)
         return JsonResponse({"success": True, "message": "Callback processed"}, status=200)
 
-    except json.JSONDecodeError:
-        logger.error("Invalid JSON in callback")
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in callback: {str(e)}")
+        logger.error(f"Callback body: {request.body.decode('utf-8')}")
         return JsonResponse({"error": "Invalid JSON"}, status=400)
     except Exception as e:
-        logger.error(f"Error processing callback: {str(e)}")
+        logger.error("=" * 80)
+        logger.error(f"❌ Error processing callback: {str(e)}")
+        logger.error(f"Exception type: {type(e).__name__}")
+        import traceback
+
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        logger.error("=" * 80)
         return JsonResponse({"error": "Internal server error"}, status=500)

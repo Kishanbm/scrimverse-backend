@@ -34,8 +34,6 @@ class PaymentSerializer(serializers.ModelSerializer):
             "error_code",
             "detailed_error_code",
             "meta_info",
-            "pending_data",
-            "payment_expires_at",
             "created_at",
             "updated_at",
             "completed_at",

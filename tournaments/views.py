@@ -83,8 +83,7 @@ class TournamentListView(generics.ListAPIView):
         return super().list(request, *args, **kwargs)
 
     def get_queryset(self):
-        # Exclude tournaments with pending payment from public view
-        queryset = Tournament.objects.filter(is_payment_pending=False)
+        queryset = Tournament.objects.all()
         status_param = self.request.query_params.get("status", None)
         game = self.request.query_params.get("game", None)
         category = self.request.query_params.get("category", None)
@@ -159,7 +158,6 @@ class TournamentCreateView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         """Validate tournament data and initiate payment"""
-        from datetime import timedelta
         from uuid import uuid4
 
         from decouple import config
@@ -230,17 +228,18 @@ class TournamentCreateView(generics.CreateAPIView):
         # Add host ID
         pending_tournament_data["host_id"] = request.user.host_profile.id
 
-        # Prepare metadata
+        # Prepare metadata - udf3 has 256 char limit, so store tournament data separately
         payment_type = "scrim_plan" if event_mode == "SCRIM" else "tournament_plan"
         meta_info = {
             "udf1": str(request.user.id),
             "udf2": payment_type,
-            "udf3": "",  # No tournament ID yet
-            "udf4": "",
+            "udf3": payment_type,  # Just store payment type (within 256 char limit)
+            "udf4": plan_type,
             "udf5": merchant_order_id,
+            "tournament_data": pending_tournament_data,  # Store actual data here (not sent to PhonePe)
         }
 
-        # Create payment record with pending data
+        # Create payment record
         try:
             payment = Payment.objects.create(
                 merchant_order_id=merchant_order_id,
@@ -251,8 +250,6 @@ class TournamentCreateView(generics.CreateAPIView):
                 host_profile=request.user.host_profile,
                 status="pending",
                 meta_info=meta_info,
-                pending_data=pending_tournament_data,
-                payment_expires_at=timezone.now() + timedelta(hours=12),
             )
 
             # Initiate payment with PhonePe
@@ -292,6 +289,7 @@ class TournamentCreateView(generics.CreateAPIView):
                     "redirect_url": phonepe_response.get("redirect_url"),
                     "amount": amount,
                     "plan_type": plan_type,
+                    "payment_required": True,  # Signal to frontend to open iframe
                 },
                 status=200,
             )
@@ -382,7 +380,6 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        from datetime import timedelta
         from uuid import uuid4
 
         from decouple import config
@@ -417,8 +414,8 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
                 }
             )
 
-        # Check if tournament is full (only count confirmed registrations, not pending payments)
-        confirmed_count = TournamentRegistration.objects.filter(tournament=tournament, is_payment_pending=False).count()
+        # Check if tournament is full
+        confirmed_count = TournamentRegistration.objects.filter(tournament=tournament).count()
 
         if confirmed_count >= tournament.max_participants:
             raise ValidationError({"error": "Tournament is full"})
@@ -439,8 +436,8 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
         )
         team_player_ids = {user.player_profile.id for user in team_users if hasattr(user, "player_profile")}
 
-        # Check existing registrations (only confirmed ones)
-        existing_registrations = TournamentRegistration.objects.filter(tournament=tournament, is_payment_pending=False)
+        # Check existing registrations
+        existing_registrations = TournamentRegistration.objects.filter(tournament=tournament)
         for registration in existing_registrations:
             if registration.team_members:
                 registered_player_ids = {member.get("id") for member in registration.team_members if member.get("id")}
@@ -462,7 +459,7 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
         if tournament.entry_fee > 0:
             # PAYMENT FLOW - Don't create registration yet
 
-            # Prepare registration data to store in pending_data
+            # Prepare registration data to store in meta_info
             pending_reg_data = {
                 "tournament_id": tournament_id,
                 "player_id": player_profile.id,
@@ -496,17 +493,18 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
             frontend_url = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(",")[0]
             redirect_url = f"{frontend_url}/player/dashboard?payment_status=check&order_id={merchant_order_id}"
 
-            # Prepare metadata
+            # Prepare metadata - udf3 has 256 char limit, so store registration data separately
             meta_info = {
                 "udf1": str(self.request.user.id),
                 "udf2": "entry_fee",
-                "udf3": str(tournament_id),
-                "udf4": "",
+                "udf3": "entry_fee",  # Just store payment type (within 256 char limit)
+                "udf4": str(tournament_id),
                 "udf5": merchant_order_id,
+                "registration_data": pending_reg_data,  # Store actual data here (not sent to PhonePe)
             }
 
             try:
-                # Create payment record with pending data
+                # Create payment record
                 payment = Payment.objects.create(
                     merchant_order_id=merchant_order_id,
                     payment_type="entry_fee",
@@ -516,8 +514,6 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
                     player_profile=player_profile,
                     status="pending",
                     meta_info=meta_info,
-                    pending_data=pending_reg_data,
-                    payment_expires_at=timezone.now() + timedelta(hours=12),
                 )
 
                 # Initiate payment with PhonePe
@@ -597,11 +593,8 @@ class PlayerTournamentRegistrationsView(generics.ListAPIView):
         try:
             player_profile = PlayerProfile.objects.get(user=self.request.user)
             team_ids = TeamMember.objects.filter(user=self.request.user).values_list("team_id", flat=True)
-            # Exclude registrations with pending payment
             return (
-                TournamentRegistration.objects.filter(
-                    Q(player=player_profile) | Q(team_id__in=team_ids), is_payment_pending=False
-                )
+                TournamentRegistration.objects.filter(Q(player=player_profile) | Q(team_id__in=team_ids))
                 .distinct()
                 .order_by("-registered_at")
             )

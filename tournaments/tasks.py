@@ -53,56 +53,22 @@ def update_tournament_statuses():
 @shared_task
 def cleanup_unpaid_tournaments_and_registrations():
     """
-    Clean up expired pending payments after 12-hour grace period
-    Runs every hour via Celery Beat
-
+    Clean up expired pending payments.
     Since tournaments/registrations are now created only AFTER payment success,
-    we just need to delete expired pending payments.
+    we just need to delete failed payment records occasionally.
     """
     now = timezone.now()
+    # Delete failed or pending payments older than 24 hours
+    expired_time = now - timezone.timedelta(hours=24)
+    expired_payments = Payment.objects.filter(status__in=["pending", "failed"], created_at__lte=expired_time)
 
-    # Clean up expired pending payments
-    expired_payments = Payment.objects.filter(
-        status__in=["pending", "failed"], payment_expires_at__lte=now, pending_data__isnull=False
-    ).exclude(pending_data={})
+    count = expired_payments.count()
+    if count > 0:
+        logger.info(f"Cleaning up {count} old payment records")
+        expired_payments.delete()
 
-    payments_deleted = 0
-    for payment in expired_payments:
-        logger.info(f"Deleting expired payment: {payment.merchant_order_id} - Type: {payment.payment_type}")
-        payment.delete()
-        payments_deleted += 1
-
-    # Also clean up old tournaments/registrations that were created with old flow (is_payment_pending=True)
-    # This is for backward compatibility during transition
-    unpaid_tournaments = Tournament.objects.filter(is_payment_pending=True, payment_deadline__lte=now)
-
-    tournaments_deleted = 0
-    for tournament in unpaid_tournaments:
-        logger.info(f"Deleting unpaid tournament (old flow): {tournament.id} - {tournament.title}")
-        tournament.delete()
-        tournaments_deleted += 1
-
-    unpaid_registrations = TournamentRegistration.objects.filter(is_payment_pending=True, payment_deadline__lte=now)
-
-    registrations_deleted = 0
-    for registration in unpaid_registrations:
-        logger.info(f"Deleting unpaid registration (old flow): {registration.id}")
-        if registration.team and registration.team.is_temporary:
-            registration.team.delete()
-        registration.delete()
-        registrations_deleted += 1
-
-    # Clear cache if any deletions occurred
-    if payments_deleted > 0 or tournaments_deleted > 0 or registrations_deleted > 0:
-        cache.delete("tournaments:list:all")
-
-    logger.info(
-        f"Cleanup completed - Payments: {payments_deleted}, Tournaments: {tournaments_deleted}, Registrations: {registrations_deleted}"  # noqa: E501
-    )
     return {
-        "payments_deleted": payments_deleted,
-        "tournaments_deleted": tournaments_deleted,
-        "registrations_deleted": registrations_deleted,
+        "payments_deleted": count,
         "timestamp": now.isoformat(),
     }
 
