@@ -1,0 +1,50 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Tournament Reminder - {{ tournament_name }}{% endblock %}
+
+{% block content %}
+<div class="status-pill">T-MINUS {{ time_until|upper }}</div>
+
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">Tournament Reminder!</h1>
+
+<p>Hi {{ user_name }},</p>
+<p>Get your setup dialed. This is a reminder that the tournament you registered for is starting in <strong>{{ time_until
+        }}</strong>.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">Deployment Intel:</h2>
+    <p style="margin-bottom: 5px; color: #000000;"><strong>TOURNAMENT:</strong> {{ tournament_name }}</p>
+    <p style="margin-bottom: 5px; color: #000000;"><strong>GAME:</strong> {{ game_name }}</p>
+    <p style="margin-bottom: 5px; color: #000000;"><strong>START TIME:</strong> {{ start_time }}</p>
+    {% if team_name %}
+    <p style="margin-bottom: 5px; color: #000000;"><strong>YOUR TEAM:</strong> {{ team_name }}</p>
+    {% endif %}
+</div>
+
+<h3 style="color: #c0ff00; margin-top: 30px;">Final Player Prep:</h3>
+<ul style="list-style: none; padding-left: 0; margin-top: 15px;">
+    <li style="margin-bottom: 15px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• UPDATE YOUR GAME</strong>
+        <p style="font-size: 14px; margin: 0;">Ensure your game is patched and ready to launch.</p>
+    </li>
+    <li style="margin-bottom: 15px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• CHECK CONNECTION</strong>
+        <p style="font-size: 14px; margin: 0;">Stable internet is non-negotiable for the win.</p>
+    </li>
+    <li style="margin-bottom: 15px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• BE ONLINE EARLY</strong>
+        <p style="font-size: 14px; margin: 0;">Be ready in the dashboard 15 minutes before start.</p>
+    </li>
+</ul>
+
+<p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 30px;">WARM UP THOSE FINGERS. BRING YOUR
+    A-GAME.</p>
+
+<a href="{{ tournament_url }}" class="button">ENTER THE ARENA</a>
+
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
+{% endblock %}

@@ -26,6 +26,30 @@ app.conf.beat_schedule = {
         "task": "tournaments.tasks.update_tournament_statuses",
         "schedule": crontab(minute="*"),  # Run every minute
     },
+    "cleanup-unpaid-tournaments-registrations": {
+        "task": "tournaments.tasks.cleanup_unpaid_tournaments_and_registrations",
+        "schedule": crontab(minute=0),  # Run every hour at minute 0
+    },
+    "update-platform-statistics": {
+        "task": "tournaments.tasks.update_platform_statistics",
+        "schedule": crontab(minute=5),  # Run every hour at minute 5
+    },
+    "refresh-host-dashboards": {
+        "task": "tournaments.tasks.refresh_all_host_dashboards",
+        "schedule": crontab(minute="*/10"),  # Run every 10 minutes
+    },
+    "update-leaderboard": {
+        "task": "tournaments.tasks.update_leaderboard",
+        "schedule": crontab(minute="*/30"),  # Run every 30 minutes
+    },
+    "send-tournament-reminders-24h": {
+        "task": "tournaments.tasks.send_tournament_reminders_24h",
+        "schedule": crontab(minute=0),  # Run every hour at minute 0
+    },
+    "send-tournament-reminders-1h": {
+        "task": "tournaments.tasks.send_tournament_reminders_1h",
+        "schedule": crontab(minute="*/5"),  # Run every 5 minutes
+    },
 }
 
 app.conf.timezone = "Asia/Kolkata"

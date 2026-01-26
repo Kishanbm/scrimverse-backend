@@ -1,6 +1,8 @@
 """
 Test cases for authentication (register, login)
 """
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 
 import pytest
@@ -14,29 +16,32 @@ User = get_user_model()
 
 @pytest.mark.auth
 @pytest.mark.django_db
-def test_player_registration_success(api_client):
-    """Test successful player registration"""
+@patch("accounts.views.send_verification_email_task.delay")
+def test_player_registration_success(mock_email_task, api_client):
+    """Test successful player registration with email verification"""
     data = {
         "email": "newplayer@test.com",
         "username": "newplayer",
         "password": "TestPass123!",
         "password2": "TestPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "ProGamer",
-        "game_id": "UID123456",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
     assert response.status_code == status.HTTP_201_CREATED
-    assert "tokens" in response.data
-    assert "access" in response.data["tokens"]
-    assert "refresh" in response.data["tokens"]
+    assert "message" in response.data
+    assert "verification_required" in response.data
+    assert response.data["verification_required"] is True
     assert User.objects.filter(email="newplayer@test.com").exists()
 
     user = User.objects.get(email="newplayer@test.com")
     assert user.user_type == "player"
     assert hasattr(user, "player_profile")
-    assert user.player_profile.in_game_name == "ProGamer"
+    assert user.is_active is False  # Account not active until verified
+    assert user.is_email_verified is False
+
+    # Verify email task was called
+    mock_email_task.assert_called_once()
 
 
 @pytest.mark.auth
@@ -49,8 +54,6 @@ def test_player_registration_password_mismatch(api_client):
         "password": "TestPass123!",
         "password2": "DifferentPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "Gamer",
-        "game_id": "UID123",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
@@ -60,16 +63,20 @@ def test_player_registration_password_mismatch(api_client):
 
 @pytest.mark.auth
 @pytest.mark.django_db
-def test_player_registration_duplicate_email(api_client, player_user):
-    """Test registration fails with duplicate email"""
+@patch("accounts.views.send_verification_email_task.delay")
+def test_player_registration_duplicate_email(mock_email_task, api_client, player_user):
+    """Test registration allows re-registration if previous account is unverified, but fails if verified"""
+    # First ensure the existing player_user is verified
+    player_user.is_email_verified = True
+    player_user.is_active = True
+    player_user.save()
+
     data = {
         "email": player_user.email,
         "username": "newusername",
         "password": "TestPass123!",
         "password2": "TestPass123!",
         "phone_number": "9876543210",
-        "in_game_name": "Gamer",
-        "game_id": "UID123",
     }
     response = api_client.post("/api/accounts/player/register/", data)
 
@@ -94,8 +101,9 @@ def test_player_registration_missing_fields(api_client):
 
 @pytest.mark.auth
 @pytest.mark.django_db
-def test_host_registration_success(api_client):
-    """Test successful host registration"""
+@patch("accounts.views.send_verification_email_task.delay")
+def test_host_registration_success(mock_email_task, api_client):
+    """Test successful host registration with email verification"""
     data = {
         "email": "newhost@test.com",
         "username": "newhost",
@@ -106,13 +114,18 @@ def test_host_registration_success(api_client):
     response = api_client.post("/api/accounts/host/register/", data)
 
     assert response.status_code == status.HTTP_201_CREATED
-    assert "tokens" in response.data
-    assert "access" in response.data["tokens"]
-    assert "refresh" in response.data["tokens"]
+    assert "message" in response.data
+    assert "verification_required" in response.data
+    assert response.data["verification_required"] is True
 
     user = User.objects.get(email="newhost@test.com")
     assert user.user_type == "host"
     assert hasattr(user, "host_profile")
+    assert user.is_active is False  # Account not active until verified
+    assert user.is_email_verified is False
+
+    # Verify email task was called
+    mock_email_task.assert_called_once()
 
 
 @pytest.mark.auth
@@ -125,7 +138,6 @@ def test_host_registration_password_mismatch(api_client):
         "password": "TestPass123!",
         "password2": "Wrong123!",
         "phone_number": "9876543210",
-        "organization_name": "Org",
     }
     response = api_client.post("/api/accounts/host/register/", data)
 

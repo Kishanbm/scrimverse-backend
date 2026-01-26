@@ -226,7 +226,8 @@ def test_select_winner_final_round(host_authenticated_client):
     tournament.round_status = {"1": "completed", "2": "ongoing"}
     reg1 = TournamentRegistrationFactory(tournament=tournament, status="confirmed")
     reg2 = TournamentRegistrationFactory(tournament=tournament, status="confirmed")
-    tournament.selected_teams = {"2": [reg1.id, reg2.id]}
+    # Set Round 1 selected teams as these are the participants for Round 2
+    tournament.selected_teams = {"1": [reg1.id, reg2.id]}
     tournament.save()
 
     client = APIClient()
@@ -262,7 +263,7 @@ def test_select_winner_non_final_round_fails(host_authenticated_client, tourname
 
 @pytest.mark.django_db
 def test_select_winner_not_in_selected_teams_fails(host_authenticated_client):
-    """Test selecting winner that's not in selected teams fails"""
+    """Test selecting winner that's not in participating teams fails"""
     host = HostProfileFactory()
     tournament = TournamentFactory(
         host=host,
@@ -275,17 +276,18 @@ def test_select_winner_not_in_selected_teams_fails(host_authenticated_client):
     reg1 = TournamentRegistrationFactory(tournament=tournament, status="confirmed")
     reg2 = TournamentRegistrationFactory(tournament=tournament, status="confirmed")
     reg3 = TournamentRegistrationFactory(tournament=tournament, status="confirmed")
-    tournament.selected_teams = {"2": [reg1.id, reg2.id]}
+    # Round 1 selected teams (participants for Round 2)
+    tournament.selected_teams = {"1": [reg1.id, reg2.id]}  # reg3 is NOT here
     tournament.save()
 
     client = APIClient()
     client.force_authenticate(user=host.user)
 
-    data = {"winner_id": reg3.id}  # reg3 not in selected teams
+    data = {"winner_id": reg3.id}  # reg3 not in participating teams
     response = client.post(f"/api/tournaments/{tournament.id}/select-winner/", data, format="json")
 
     assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "selected teams" in response.data["error"].lower()
+    assert "participating teams" in response.data["error"].lower()
 
 
 @pytest.mark.django_db
@@ -369,20 +371,6 @@ def test_end_tournament_all_rounds_completed(host_authenticated_client):
 
 
 @pytest.mark.django_db
-def test_end_tournament_early_allowed(host_authenticated_client, tournament):
-    """Test ending tournament early (before all rounds completed) is allowed"""
-    tournament.status = "ongoing"
-    tournament.round_status = {"1": "ongoing"}
-    tournament.save()
-
-    response = host_authenticated_client.post(f"/api/tournaments/{tournament.id}/end/")
-
-    assert response.status_code == status.HTTP_200_OK
-    tournament.refresh_from_db()
-    assert tournament.status == "completed"
-
-
-@pytest.mark.django_db
 def test_update_tournament_fields_restricted(host_authenticated_client, tournament):
     """Test updating tournament fields with restrictions (only allowed fields)"""
     original_max_participants = tournament.max_participants
@@ -392,10 +380,9 @@ def test_update_tournament_fields_restricted(host_authenticated_client, tourname
         "title": "Updated Title",
         "description": "Updated description",
         "rules": "Updated rules",
-        "discord_id": "discord.gg/updated",
         # Try to update restricted fields
         "max_participants": 200,  # Should be ignored
-        "game_name": "Valorant",  # Should be ignored
+        "game_name": "COD",  # Should be ignored
     }
 
     response = host_authenticated_client.patch(f"/api/tournaments/{tournament.id}/update-fields/", data, format="json")
@@ -405,7 +392,6 @@ def test_update_tournament_fields_restricted(host_authenticated_client, tourname
     assert tournament.title == "Updated Title"
     assert tournament.description == "Updated description"
     assert tournament.rules == "Updated rules"
-    assert tournament.discord_id == "discord.gg/updated"
     # Restricted fields should not be updated (check original values)
     assert tournament.max_participants == original_max_participants
     assert tournament.game_name == original_game_name

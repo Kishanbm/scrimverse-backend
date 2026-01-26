@@ -109,7 +109,6 @@ def test_create_tournament_as_host(host_authenticated_client):
         "prize_pool": "5000.00",
         "tournament_date": tournament_date.isoformat(),
         "tournament_time": tournament_time_obj.isoformat(),
-        "discord_id": "discord.gg/scrimverse",
         "rounds": [
             {"round": 1, "max_teams": 100, "qualifying_teams": 50},
             {"round": 2, "max_teams": 50, "qualifying_teams": 20},
@@ -123,14 +122,13 @@ def test_create_tournament_as_host(host_authenticated_client):
     }
     response = host_authenticated_client.post("/api/tournaments/create/", data, format="json")
 
-    assert response.status_code == status.HTTP_201_CREATED
+    assert response.status_code == status.HTTP_200_OK  # Free plan returns 200
     assert Tournament.objects.filter(title="New Tournament").exists()
 
     tournament = Tournament.objects.get(title="New Tournament")
     assert tournament.game_name == "BGMI"
     assert tournament.game_mode == "Squad"
     assert tournament.max_participants == 100
-    assert tournament.discord_id == "discord.gg/scrimverse"
     assert len(tournament.rounds) == 3
     assert tournament.rounds[0]["qualifying_teams"] == 50
 

@@ -1,0 +1,38 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Registration Confirmed - Scrimverse{% endblock %}
+
+{% block content %}
+<div class="status-pill">Registration Status: CONFIRMED</div>
+
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">BOOM! Registration CONFIRMED!</h1>
+
+<p>Hi {{ user_name }}, you're officially in the fight for <strong>{{ tournament_name }}</strong>.</p>
+<p>No waiting. No maybes. Your entry is confirmed.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">What happens next:</h2>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">TOURNAMENT STARTS:</p>
+    <p style="margin-bottom: 15px;">{{ start_date }}</p>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">MATCH ACCESS (ID & PASSWORD):</p>
+    <p style="margin-bottom: 15px;">You will receive the match ID and password inside your ScrimVerse dashboard.</p>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">POINTS & RANKINGS:</p>
+    <p>Scores are updated live on your dashboard after each match.</p>
+</div>
+
+<div style="margin-top: 30px;">
+    <p>Get your setup dialed. Warm up those fingers. Bring your A-game.</p>
+    <p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 20px;">LET'S STACK THOSE Ws!</p>
+</div>
+
+<a href="{{ tournament_url }}" class="button">VIEW TOURNAMENT DETAILS</a>
+
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
+{% endblock %}

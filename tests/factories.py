@@ -9,8 +9,8 @@ import factory
 from factory.django import DjangoModelFactory
 from faker import Faker
 
-from accounts.models import HostProfile, PlayerProfile, User
-from tournaments.models import HostRating, Scrim, ScrimRegistration, Tournament, TournamentRegistration
+from accounts.models import HostProfile, PlayerProfile, Team, TeamStatistics, User
+from tournaments.models import HostRating, Tournament, TournamentRegistration
 
 fake = Faker()
 
@@ -38,8 +38,6 @@ class PlayerProfileFactory(DjangoModelFactory):
         model = PlayerProfile
 
     user = factory.SubFactory(UserFactory, user_type="player")
-    in_game_name = factory.LazyAttribute(lambda _: fake.user_name())
-    game_id = factory.Sequence(lambda n: f"UID{n:06d}")
     bio = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
 
 
@@ -64,7 +62,7 @@ class TournamentFactory(DjangoModelFactory):
     host = factory.SubFactory(HostProfileFactory)
     title = factory.LazyAttribute(lambda _: f"{fake.catch_phrase()} Tournament")
     description = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=500))
-    game_name = factory.Iterator(["BGMI", "Free Fire", "Call of Duty", "Valorant", "PUBG"])
+    game_name = factory.Iterator(["BGMI", "COD", "Freefire", "Scarfall"])
     game_mode = "Squad"  # Default to Squad mode for consistent testing
     max_participants = factory.Iterator([50, 100, 150, 200])
     current_participants = 0
@@ -91,7 +89,6 @@ class TournamentFactory(DjangoModelFactory):
     rules = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=500))
     banner_image = None
     tournament_file = None
-    discord_id = factory.LazyAttribute(lambda _: f"discord.gg/{fake.word()}")
 
     @factory.lazy_attribute
     def tournament_date(self):
@@ -111,41 +108,6 @@ class TournamentFactory(DjangoModelFactory):
         ]
 
 
-class ScrimFactory(DjangoModelFactory):
-    """Factory for Scrim model"""
-
-    class Meta:
-        model = Scrim
-
-    host = factory.SubFactory(HostProfileFactory)
-    title = factory.LazyAttribute(lambda _: f"{fake.catch_phrase()} Scrim")
-    description = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=300))
-    game_name = factory.Iterator(["BGMI", "Free Fire", "Call of Duty", "Valorant"])
-    game_mode = factory.Iterator(["Solo", "Duo", "Squad"])
-    max_participants = factory.Iterator([20, 30, 50])
-    current_participants = 0
-    entry_fee = factory.LazyAttribute(lambda _: fake.pydecimal(left_digits=2, right_digits=2, positive=True))
-
-    @factory.lazy_attribute
-    def registration_start(self):
-        return timezone.now()
-
-    @factory.lazy_attribute
-    def registration_end(self):
-        return self.registration_start + timedelta(hours=2)
-
-    @factory.lazy_attribute
-    def scrim_start(self):
-        return self.registration_end + timedelta(hours=1)
-
-    @factory.lazy_attribute
-    def scrim_end(self):
-        return self.scrim_start + timedelta(hours=2)
-
-    status = "upcoming"
-    rules = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
-
-
 class TournamentRegistrationFactory(DjangoModelFactory):
     """Factory for TournamentRegistration model"""
 
@@ -158,35 +120,17 @@ class TournamentRegistrationFactory(DjangoModelFactory):
 
     @factory.lazy_attribute
     def team_members(self):
-        return [fake.name() for _ in range(4)]
-
-    @factory.lazy_attribute
-    def in_game_details(self):
-        return {"ign": fake.user_name(), "uid": f"UID{fake.random_number(digits=6)}", "rank": "Gold"}
+        return [
+            {
+                "username": fake.user_name(),
+                "is_registered": True,
+                "player_id": 1,  # Placeholder
+            }
+            for _ in range(4)
+        ]
 
     payment_status = False
     status = "pending"
-
-
-class ScrimRegistrationFactory(DjangoModelFactory):
-    """Factory for ScrimRegistration model"""
-
-    class Meta:
-        model = ScrimRegistration
-
-    scrim = factory.SubFactory(ScrimFactory)
-    player = factory.SubFactory(PlayerProfileFactory)
-    team_name = factory.LazyAttribute(lambda _: fake.company())
-
-    @factory.lazy_attribute
-    def team_members(self):
-        return [fake.name() for _ in range(2)]
-
-    @factory.lazy_attribute
-    def in_game_details(self):
-        return {"ign": fake.user_name(), "uid": f"UID{fake.random_number(digits=6)}"}
-
-    status = "confirmed"
 
 
 class HostRatingFactory(DjangoModelFactory):
@@ -199,3 +143,32 @@ class HostRatingFactory(DjangoModelFactory):
     player = factory.SubFactory(PlayerProfileFactory)
     rating = factory.Iterator([1, 2, 3, 4, 5])
     review = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
+
+
+class TeamFactory(DjangoModelFactory):
+    """Factory for Team model"""
+
+    class Meta:
+        model = Team
+
+    name = factory.LazyAttribute(lambda _: f"{fake.word().capitalize()} {fake.word().capitalize()}")
+    captain = factory.SubFactory(UserFactory, user_type="player")
+    description = factory.LazyAttribute(lambda _: fake.text(max_nb_chars=200))
+    is_temporary = False
+
+
+class TeamStatisticsFactory(DjangoModelFactory):
+    """Factory for TeamStatistics model"""
+
+    class Meta:
+        model = TeamStatistics
+
+    team = factory.SubFactory(TeamFactory)
+    tournament_position_points = 0
+    tournament_kill_points = 0
+    tournament_wins = 0
+    tournament_rank = 0
+    scrim_position_points = 0
+    scrim_kill_points = 0
+    scrim_wins = 0
+    scrim_rank = 0

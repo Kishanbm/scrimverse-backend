@@ -1,0 +1,44 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Tournament Completed - {{ tournament_name }}{% endblock %}
+
+{% block content %}
+<div class="status-pill">Archive Status: COMPLETED</div>
+
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 20px;">Tournament Completed</h1>
+
+<p>Hi {{ host_name }},</p>
+<p>Your event <strong>{{ tournament_name }}</strong> has been successfully archived. Final rankings are now live on the
+    platform.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 15px; font-size: 18px; text-transform: uppercase; letter-spacing: 1px;">Final Standings:
+    </h2>
+
+    <p style="margin-bottom: 8px; font-size: 16px; color: #000000;">
+        <strong style="color: #000000;">WINNER:</strong> {{ winner_name|default:"Not specified" }}
+    </p>
+
+    <p style="margin-bottom: 8px; font-size: 16px; color: #000000;">
+        <strong style="color: #000000;">RUNNER-UP:</strong> {{ runner_up_name|default:"Not specified" }}
+    </p>
+
+    <div style="border-top: 1px solid rgba(0, 0, 0, 0.1); margin: 15px 0; padding-top: 15px;">
+        <p style="font-size: 14px; color: #333333; margin-bottom: 5px;"><strong>TOTAL PARTICIPANTS:</strong> {{
+            total_participants }}</p>
+        <p style="font-size: 14px; color: #333333;"><strong>TOTAL MATCHES:</strong> {{ total_matches }}</p>
+    </div>
+</div>
+
+<p style="color: rgba(255, 255, 255, 0.8); margin-top: 30px; margin-bottom: 30px;">
+    Host more events to climb the organizer leaderboards and build your community presence.
+</p>
+
+<a href="{{ tournament_manage_url }}" class="button">VIEW FINAL SUMMARY</a>
+
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
+{% endblock %}

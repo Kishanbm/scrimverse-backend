@@ -31,9 +31,11 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "django_redis",
+    "storages",  # AWS S3 storage
     # Local apps
     "accounts",
     "tournaments",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -45,6 +47,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "scrimverse.middleware.NoCacheMiddleware",
 ]
 
 ROOT_URLCONF = "scrimverse.urls"
@@ -52,7 +55,7 @@ ROOT_URLCONF = "scrimverse.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -107,13 +110,43 @@ TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
 USE_TZ = True
 
-# Static files (CSS, JavaScript, Images)
-STATIC_URL = "static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
+# ==================== STATIC & MEDIA FILES CONFIGURATION ====================
 
-# Media files
-MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+# AWS S3 Settings
+USE_S3 = config("USE_S3", default=False, cast=bool)
+
+if USE_S3:
+    # AWS S3 Configuration
+    AWS_ACCESS_KEY_ID = config("AWS_ACCESS_KEY_ID")
+    AWS_SECRET_ACCESS_KEY = config("AWS_SECRET_ACCESS_KEY")
+    AWS_STORAGE_BUCKET_NAME = config("AWS_STORAGE_BUCKET_NAME")
+    AWS_S3_REGION_NAME = config("AWS_S3_REGION_NAME", default="ap-south-2")
+    AWS_S3_CUSTOM_DOMAIN = f"{AWS_STORAGE_BUCKET_NAME}.s3.{AWS_S3_REGION_NAME}.amazonaws.com"
+
+    # S3 Object Parameters
+    AWS_S3_OBJECT_PARAMETERS = {
+        "CacheControl": "max-age=86400",  # 1 day cache
+    }
+
+    # Don't add auth query params to URLs
+    AWS_QUERYSTRING_AUTH = False
+
+    # Static files (CSS, JavaScript, Images) - uses custom backend
+    STATICFILES_STORAGE = "scrimverse.storage_backends.StaticStorage"
+    STATIC_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/static/"
+
+    # Media files (User uploads) - uses custom backend
+    DEFAULT_FILE_STORAGE = "scrimverse.storage_backends.MediaStorage"
+    MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
+
+else:
+    # Local file storage (Development)
+    STATIC_URL = "static/"
+    STATIC_ROOT = BASE_DIR / "staticfiles"
+
+    MEDIA_URL = "media/"
+    MEDIA_ROOT = BASE_DIR / "media"
+
 
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -142,6 +175,9 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000").split(",")
 
 CORS_ALLOW_CREDENTIALS = True
+
+# CSRF Settings
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000").split(",")
 
 # ==================== REDIS CACHE CONFIGURATION ====================
 
@@ -191,3 +227,129 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
 CELERY_WORKER_SEND_TASK_EVENTS = True
+
+# ==================== LOGGING CONFIGURATION ====================
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "verbose": {
+            "format": "[{levelname}] {asctime} {name} {module}.{funcName}:{lineno} - {message}",
+            "style": "{",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+        "simple": {
+            "format": "[{levelname}] {asctime} - {message}",
+            "style": "{",
+            "datefmt": "%Y-%m-%d %H:%M:%S",
+        },
+    },
+    "filters": {
+        "require_debug_false": {
+            "()": "django.utils.log.RequireDebugFalse",
+        },
+        "require_debug_true": {
+            "()": "django.utils.log.RequireDebugTrue",
+        },
+    },
+    "handlers": {
+        "console": {
+            "level": "INFO",
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+        },
+        "file_general": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": BASE_DIR / "logs" / "django.log",
+            "maxBytes": 1024 * 1024 * 10,  # 10 MB
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+        "file_error": {
+            "level": "ERROR",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": BASE_DIR / "logs" / "django_error.log",
+            "maxBytes": 1024 * 1024 * 10,  # 10 MB
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+        "file_api": {
+            "level": "DEBUG",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": BASE_DIR / "logs" / "api.log",
+            "maxBytes": 1024 * 1024 * 10,  # 10 MB
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+        "file_celery": {
+            "level": "INFO",
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": BASE_DIR / "logs" / "celery.log",
+            "maxBytes": 1024 * 1024 * 10,  # 10 MB
+            "backupCount": 5,
+            "formatter": "verbose",
+        },
+    },
+    "loggers": {
+        "django": {
+            "handlers": ["console", "file_general"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "django.request": {
+            "handlers": ["console", "file_error"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+        "django.db.backends": {
+            "handlers": ["console"],
+            "level": "WARNING",  # Set to DEBUG to see SQL queries
+            "propagate": False,
+        },
+        "accounts": {
+            "handlers": ["console", "file_api"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "tournaments": {
+            "handlers": ["console", "file_api"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "payments": {
+            "handlers": ["console", "file_api"],
+            "level": "DEBUG",
+            "propagate": False,
+        },
+        "celery": {
+            "handlers": ["console", "file_celery"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+    "root": {
+        "handlers": ["console", "file_general"],
+        "level": "INFO",
+    },
+}
+
+# ==================== EMAIL CONFIGURATION ====================
+
+# Email Backend Configuration (AWS SES)
+EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = config("EMAIL_HOST", default="email-smtp.ap-south-2.amazonaws.com")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+
+# Email Addresses
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@scrimverse.com")
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@scrimverse.com")
+ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@scrimverse.com")
+
+# Email Settings
+EMAIL_TIMEOUT = 10  # seconds
+EMAIL_USE_LOCALTIME = True

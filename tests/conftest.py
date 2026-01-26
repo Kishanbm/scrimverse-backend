@@ -1,21 +1,46 @@
 """
 Pytest fixtures and configuration for Scrimverse tests
 """
+from unittest.mock import patch
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 
 import pytest
+import redis
 from rest_framework.test import APIClient
 
 from tests.factories import (
     HostProfileFactory,
     PlayerProfileFactory,
-    ScrimFactory,
-    ScrimRegistrationFactory,
     TournamentFactory,
     TournamentRegistrationFactory,
     UserFactory,
 )
+
+
+@pytest.fixture(autouse=True)
+def mock_phonepe_initiate_payment():
+    """Mock PhonePe payment initiation for all tests"""
+    with patch("payments.services.phonepe_service.initiate_payment") as mock:
+        mock.return_value = {
+            "success": True,
+            "code": "PAYMENT_INITIATED",
+            "message": "Payment initiated successfully",
+            "order_id": "PHONEPE_ORDER_123",
+            "redirect_url": "https://test.phonepe.com/pay/TEST_TXN_123",
+            "data": {
+                "merchantId": "TEST_MERCHANT",
+                "merchantTransactionId": "TEST_TXN_123",
+                "merchantOrderId": "TEST_ORDER_123",
+                "instrumentResponse": {
+                    "redirectInfo": {"url": "https://test.phonepe.com/pay/TEST_TXN_123", "method": "GET"}
+                },
+            },
+        }
+        yield mock
+
 
 User = get_user_model()
 
@@ -24,10 +49,6 @@ User = get_user_model()
 def redis_available():
     """Check if Redis server is running"""
     try:
-        from django.conf import settings
-
-        import redis
-
         # Try to connect to Redis
         r = redis.Redis(
             host=settings.REDIS_HOST,
@@ -164,31 +185,9 @@ def multiple_tournaments(db, host_user):
 
 
 @pytest.fixture
-def scrim(db, host_user):
-    """Create a scrim"""
-    return ScrimFactory(host=host_user.host_profile)
-
-
-@pytest.fixture
-def multiple_scrims(db, host_user):
-    """Create multiple scrims"""
-    return [
-        ScrimFactory(host=host_user.host_profile, status="upcoming"),
-        ScrimFactory(host=host_user.host_profile, status="ongoing"),
-        ScrimFactory(host=host_user.host_profile, status="completed"),
-    ]
-
-
-@pytest.fixture
 def tournament_registration(db, tournament, player_user):
     """Create a tournament registration"""
     return TournamentRegistrationFactory(tournament=tournament, player=player_user.player_profile)
-
-
-@pytest.fixture
-def scrim_registration(db, scrim, player_user):
-    """Create a scrim registration"""
-    return ScrimRegistrationFactory(scrim=scrim, player=player_user.player_profile)
 
 
 @pytest.fixture
@@ -200,3 +199,21 @@ def test_players(db):
         PlayerProfileFactory(user=user)
         players.append(user)
     return players
+
+
+@pytest.fixture(autouse=True)
+def free_plan_pricing(db):
+    """Create free plan pricing for tests to avoid payment gateway"""
+    from decimal import Decimal
+
+    from payments.models import PlanPricing
+
+    # Use update_or_create to ensure free pricing for tests
+    PlanPricing.objects.update_or_create(
+        plan_type="tournament_basic",
+        defaults={"price": Decimal("0.00"), "is_active": True, "description": "Free for testing"},
+    )
+    PlanPricing.objects.update_or_create(
+        plan_type="scrim_basic",
+        defaults={"price": Decimal("0.00"), "is_active": True, "description": "Free for testing"},
+    )

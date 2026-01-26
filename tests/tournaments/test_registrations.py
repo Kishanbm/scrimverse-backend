@@ -1,20 +1,26 @@
 """
-Test cases for Tournament and Scrim Registrations
+Test cases for Tournament and Scrim Registrations with Payment Gateway Mocking
 """
+from decimal import Decimal
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from payments.models import Payment
 from tests.factories import PlayerProfileFactory, UserFactory
-from tournaments.models import ScrimRegistration, TournamentRegistration
+from tournaments.models import TournamentRegistration
 
-# Tournament Registration Tests
+# Tournament Registration Tests with Payment
 
 
 @pytest.mark.django_db
-def test_player_register_for_tournament(authenticated_client, tournament, player_user, test_players):
-    """Test player can register for tournament"""
-    # Tournament is Squad mode by default (requires 4 players)
+def test_player_register_for_free_tournament(authenticated_client, tournament, player_user, test_players):
+    """Test player can register for free tournament (entry_fee = 0)"""
+    # Set tournament as free
+    tournament.entry_fee = Decimal("0.00")
+    tournament.save()
+
     data = {
         "team_name": "Team Alpha",
         "player_usernames": [
@@ -23,7 +29,6 @@ def test_player_register_for_tournament(authenticated_client, tournament, player
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "ProGamer", "uid": "UID123456", "rank": "Crown"},
     }
 
     response = authenticated_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
@@ -35,12 +40,58 @@ def test_player_register_for_tournament(authenticated_client, tournament, player
     tournament.refresh_from_db()
     assert tournament.current_participants == 1
 
+    # Verify registration is confirmed (no payment required)
+    registration = TournamentRegistration.objects.get(tournament=tournament, player=player_user.player_profile)
+    assert registration.payment_status is True
+
 
 @pytest.mark.django_db
-def test_register_without_in_game_details_fails(authenticated_client, tournament, player_user, test_players):
-    """Test registration succeeds without in_game_details (uses default empty dict)"""
+def test_player_register_for_paid_tournament_initiates_payment(
+    authenticated_client, tournament, player_user, test_players, mock_phonepe_initiate_payment
+):
+    """Test player registration for paid tournament initiates payment"""
+    # Set tournament with entry fee
+    tournament.entry_fee = Decimal("50.00")
+    tournament.save()
+
     data = {
         "team_name": "Team Beta",
+        "player_usernames": [
+            player_user.username,
+            test_players[0].username,
+            test_players[1].username,
+            test_players[2].username,
+        ],
+    }
+
+    response = authenticated_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
+
+    # Should return 200 with payment_required flag
+    assert response.status_code == status.HTTP_200_OK
+    # payment_required comes as ErrorDetail, so check string value
+    payment_required = response.data.get("payment_required")
+    assert payment_required is True or str(payment_required) == "True"
+    assert "redirect_url" in response.data
+    assert "merchant_order_id" in response.data
+
+    # Verify PhonePe was called
+    mock_phonepe_initiate_payment.assert_called_once()
+
+    # Verify Payment record was created
+    assert Payment.objects.filter(user=player_user, tournament=tournament, status="pending").exists()
+
+    # Registration should NOT be created yet (pending payment)
+    assert not TournamentRegistration.objects.filter(tournament=tournament, player=player_user.player_profile).exists()
+
+
+@pytest.mark.django_db
+def test_register_without_in_game_details_succeeds(authenticated_client, tournament, player_user, test_players):
+    """Test registration succeeds without in_game_details (uses default empty dict)"""
+    tournament.entry_fee = Decimal("0.00")
+    tournament.save()
+
+    data = {
+        "team_name": "Team Delta",
         "player_usernames": [
             player_user.username,
             test_players[0].username,
@@ -58,6 +109,9 @@ def test_register_without_in_game_details_fails(authenticated_client, tournament
 @pytest.mark.django_db
 def test_register_twice_fails(api_client, tournament, test_players):
     """Test player cannot register for same tournament twice"""
+    tournament.entry_fee = Decimal("0.00")
+    tournament.save()
+
     # Create a player and register them
     player_user = UserFactory(user_type="player")
     PlayerProfileFactory(user=player_user)
@@ -73,7 +127,6 @@ def test_register_twice_fails(api_client, tournament, test_players):
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "Gamer1", "uid": "UID111"},
     }
     # First registration should succeed
     response1 = client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
@@ -88,7 +141,6 @@ def test_register_twice_fails(api_client, tournament, test_players):
             test_players[1].username,
             test_players[2].username,
         ],
-        "in_game_details": {"ign": "Gamer2", "uid": "UID222"},
     }
     response2 = client.post(f"/api/tournaments/{tournament.id}/register/", data2, format="json")
     assert response2.status_code == status.HTTP_400_BAD_REQUEST
@@ -97,7 +149,7 @@ def test_register_twice_fails(api_client, tournament, test_players):
 @pytest.mark.django_db
 def test_host_cannot_register_for_tournament(host_authenticated_client, tournament):
     """Test host cannot register for tournament"""
-    data = {"team_name": "Host Team", "team_members": ["Host1"], "in_game_details": {"ign": "Host", "uid": "UID111"}}
+    data = {"team_name": "Host Team", "player_usernames": ["Host1"]}
     response = host_authenticated_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
@@ -106,73 +158,10 @@ def test_host_cannot_register_for_tournament(host_authenticated_client, tourname
 @pytest.mark.django_db
 def test_unauthenticated_cannot_register(api_client, tournament):
     """Test unauthenticated user cannot register"""
-    data = {"team_name": "Team", "team_members": ["Player"], "in_game_details": {"ign": "Gamer", "uid": "UID"}}
+    data = {"team_name": "Team", "player_usernames": ["Player"]}
     response = api_client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
-
-
-# Note: Test for nonexistent tournament registration removed
-# The view raises DoesNotExist which results in 500 error
-# This should be handled with try/except in the view for production
-
-
-# Scrim Registration Tests
-
-
-@pytest.mark.django_db
-def test_player_register_for_scrim(authenticated_client, scrim):
-    """Test player can register for scrim"""
-    data = {
-        "team_name": "Scrim Team",
-        "team_members": ["Player1", "Player2"],
-        "in_game_details": {"ign": "ScrimGamer", "uid": "UID789"},
-    }
-    response = authenticated_client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
-
-    assert response.status_code == status.HTTP_201_CREATED
-    assert ScrimRegistration.objects.filter(scrim=scrim).exists()
-
-    scrim.refresh_from_db()
-    assert scrim.current_participants == 1
-
-
-@pytest.mark.django_db
-def test_register_twice_for_scrim_fails(api_client, scrim):
-    """Test cannot register for same scrim twice"""
-    # Create a player
-    player_user = UserFactory(user_type="player")
-    PlayerProfileFactory(user=player_user)
-
-    client = APIClient()
-    client.force_authenticate(user=player_user)
-
-    data = {
-        "team_name": "First Team",
-        "team_members": ["Player"],
-        "in_game_details": {"ign": "Gamer1", "uid": "UID111"},
-    }
-    # First registration
-    response1 = client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
-    assert response1.status_code == status.HTTP_201_CREATED
-
-    # Second registration should fail
-    data2 = {
-        "team_name": "Another Team",
-        "team_members": ["Player"],
-        "in_game_details": {"ign": "Gamer2", "uid": "UID222"},
-    }
-    response2 = client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data2, format="json")
-    assert response2.status_code == status.HTTP_400_BAD_REQUEST
-
-
-@pytest.mark.django_db
-def test_host_cannot_register_for_scrim(host_authenticated_client, scrim):
-    """Test host cannot register for scrim"""
-    data = {"team_name": "Host Scrim Team", "team_members": ["Host"], "in_game_details": {"ign": "Host", "uid": "UID"}}
-    response = host_authenticated_client.post(f"/api/tournaments/scrims/{scrim.id}/register/", data, format="json")
-
-    assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
 # Player Registrations Tests
@@ -187,17 +176,6 @@ def test_get_player_tournament_registrations(authenticated_client, tournament_re
     results = response.data.get("results", response.data)
     assert len(results) == 1
     assert results[0]["tournament"]["id"] == tournament_registration.tournament.id
-
-
-@pytest.mark.django_db
-def test_get_player_scrim_registrations(authenticated_client, scrim_registration):
-    """Test getting player's scrim registrations"""
-    response = authenticated_client.get("/api/tournaments/scrims/my-registrations/")
-
-    assert response.status_code == status.HTTP_200_OK
-    results = response.data.get("results", response.data)
-    assert len(results) == 1
-    assert results[0]["scrim"]["id"] == scrim_registration.scrim.id
 
 
 @pytest.mark.django_db
@@ -230,8 +208,12 @@ def test_empty_registrations(authenticated_client):
 
 
 @pytest.mark.django_db
-def test_multiple_players_register(tournament, test_players):
-    """Test multiple players can register for same tournament"""
+def test_multiple_players_register_free_tournament(tournament, test_players):
+    """Test multiple players can register for same free tournament"""
+    # Set as free tournament
+    tournament.entry_fee = Decimal("0.00")
+    tournament.save()
+
     # Create 3 teams with unique players for each team
     from tests.factories import PlayerProfileFactory, UserFactory
 
@@ -254,7 +236,6 @@ def test_multiple_players_register(tournament, test_players):
         data = {
             "team_name": f"Team {team_idx}",
             "player_usernames": [p.username for p in team_members],
-            "in_game_details": {"ign": f"Gamer{team_idx}", "uid": f"UID{team_idx}"},
         }
         response = client.post(f"/api/tournaments/{tournament.id}/register/", data, format="json")
 

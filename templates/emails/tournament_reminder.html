@@ -1,0 +1,39 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Tournament Starting Today - {{ tournament_name }}{% endblock %}
+
+{% block content %}
+<div class="status-pill">Operational Status: GO LIVE</div>
+
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">Tournament Reminder!</h1>
+
+<p>Hi {{ host_name }},</p>
+<p>This is a reminder that your tournament <strong>{{ tournament_name }}</strong> is starting today. It's time to take
+    control of the arena.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">Status Check:</h2>
+    <p style="font-size: 24px; font-weight: 900; color: #000000; margin-bottom: 5px;">{{ total_registrations }} TEAMS
+        REGISTERED</p>
+    <p style="font-size: 14px; margin-bottom: 20px;">Ready for deployment.</p>
+
+    <h2 style="margin-bottom: 10px; font-size: 18px;">Final Prep:</h2>
+    <ul style="list-style: none; padding-left: 0;">
+        <li style="margin-bottom: 10px; font-size: 14px; font-weight: 700;">• SHARE MATCH IDS AND PASSWORDS FOR EACH
+            MATCH</li>
+        <li style="margin-bottom: 10px; font-size: 14px; font-weight: 700;">• MONITOR MATCHES AS THEY GO LIVE</li>
+        <li style="margin-bottom: 10px; font-size: 14px; font-weight: 700;">• UPDATE POINTS AFTER MATCHES ARE COMPLETED
+        </li>
+    </ul>
+</div>
+
+<p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 30px;">HAVE A SMOOTH RUN.</p>
+
+<a href="{{ tournament_manage_url }}" class="button">ACCESS MANAGEMENT HQ</a>
+
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
+{% endblock %}

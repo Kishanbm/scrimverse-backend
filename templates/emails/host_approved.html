@@ -1,0 +1,39 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Host Account Approved - {{ host_name }}{% endblock %}
+
+{% block content %}
+<div class="status-pill">Authentication: VERIFIED</div>
+
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">{{ host_name }}, you're CLEAR for takeoff!</h1>
+
+<p>Your verification is complete. <br><strong>Host account: ACTIVATED.</strong></p>
+
+<p>You're now officially authorized to create tournaments, manage teams, and run pro-level events on
+    <strong>Scrimverse</strong>.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">Get started immediately:</h2>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">• CREATE YOUR FIRST TOURNAMENT</p>
+    <p style="font-size: 14px; margin-bottom: 15px;">Set up your first competition and watch the registrations pour in.
+    </p>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">• RUN EVERYTHING FROM YOUR DASHBOARD</p>
+    <p style="font-size: 14px;">Manage teams, share match IDs and passwords, update points live, and handle large-scale
+        events smoothly.</p>
+</div>
+
+<div style="margin-top: 30px;">
+    <p>The players are waiting for their next battlefield. <strong>You build it.</strong></p>
+    <p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 20px;">YOU'RE ALL SET TO HOST.</p>
+</div>
+
+<a href="{{ host_dashboard_url }}" class="button">ENTER HOST DASHBOARD</a>
+
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
+{% endblock %}
