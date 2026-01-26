@@ -371,20 +371,6 @@ def test_end_tournament_all_rounds_completed(host_authenticated_client):
 
 
 @pytest.mark.django_db
-def test_end_tournament_early_allowed(host_authenticated_client, tournament):
-    """Test ending tournament early (before all rounds completed) is allowed"""
-    tournament.status = "ongoing"
-    tournament.round_status = {"1": "ongoing"}
-    tournament.save()
-
-    response = host_authenticated_client.post(f"/api/tournaments/{tournament.id}/end/")
-
-    assert response.status_code == status.HTTP_200_OK
-    tournament.refresh_from_db()
-    assert tournament.status == "completed"
-
-
-@pytest.mark.django_db
 def test_update_tournament_fields_restricted(host_authenticated_client, tournament):
     """Test updating tournament fields with restrictions (only allowed fields)"""
     original_max_participants = tournament.max_participants

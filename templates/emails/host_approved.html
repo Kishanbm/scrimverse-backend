@@ -1,33 +1,39 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Host Account Approved{% endblock %}
+{% block title %}Host Account Approved - {{ host_name }}{% endblock %}
 
 {% block content %}
-<h2>Congratulations! Your Host Account is Approved! 🎉</h2>
+<div class="status-pill">Authentication: VERIFIED</div>
 
-<p>Hi {{ user_name }},</p>
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">{{ host_name }}, you're CLEAR for takeoff!</h1>
 
-<p>Great news! Your host account application has been reviewed and approved. You can now start creating and managing tournaments on Scrimverse!</p>
+<p>Your verification is complete. <br><strong>Host account: ACTIVATED.</strong></p>
 
-<div class="info-box">
-    <p><strong>Host Name:</strong> {{ host_name }}</p>
-    <p><strong>Approved on:</strong> {{ approved_at }}</p>
-    <p><strong>Account Type:</strong> Tournament Host</p>
+<p>You're now officially authorized to create tournaments, manage teams, and run pro-level events on
+    <strong>Scrimverse</strong>.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">Get started immediately:</h2>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">• CREATE YOUR FIRST TOURNAMENT</p>
+    <p style="font-size: 14px; margin-bottom: 15px;">Set up your first competition and watch the registrations pour in.
+    </p>
+
+    <p style="font-weight: 700; margin-bottom: 5px; color: #000000;">• RUN EVERYTHING FROM YOUR DASHBOARD</p>
+    <p style="font-size: 14px;">Manage teams, share match IDs and passwords, update points live, and handle large-scale
+        events smoothly.</p>
 </div>
 
-<p>As a verified host, you can now:</p>
-<ul style="margin: 15px 0; padding-left: 20px;">
-    <li>Create unlimited tournaments</li>
-    <li>Manage registrations and participants</li>
-    <li>Publish results and standings</li>
-    <li>Access advanced analytics</li>
-</ul>
+<div style="margin-top: 30px;">
+    <p>The players are waiting for their next battlefield. <strong>You build it.</strong></p>
+    <p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 20px;">YOU'RE ALL SET TO HOST.</p>
+</div>
 
-<a href="{{ host_dashboard_url }}" class="button">Go to Host Dashboard</a>
+<a href="{{ host_dashboard_url }}" class="button">ENTER HOST DASHBOARD</a>
 
-<div class="divider"></div>
-
-<p style="font-size: 14px; color: #6c757d;">
-    Need help creating your first tournament? Check out our <a href="{{ guide_url }}" style="color: #667eea;">Host Guide</a>.
-</p>
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
 {% endblock %}

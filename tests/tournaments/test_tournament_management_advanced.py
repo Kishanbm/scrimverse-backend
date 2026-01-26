@@ -1,6 +1,10 @@
 """
 Advanced tests for tournament management
 """
+from datetime import timedelta
+
+from django.utils import timezone
+
 import pytest
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -82,7 +86,9 @@ def test_start_tournament():
     host_profile = HostProfileFactory()
     host_user = host_profile.user
 
-    tournament = TournamentFactory(host=host_profile, status="upcoming")
+    # Set tournament start time to the past so it can be started
+    past_time = timezone.now() - timedelta(hours=1)
+    tournament = TournamentFactory(host=host_profile, status="upcoming", tournament_start=past_time)
     # Add some pending registrations
     reg1 = TournamentRegistrationFactory(tournament=tournament, status="pending")
     reg2 = TournamentRegistrationFactory(tournament=tournament, status="pending")

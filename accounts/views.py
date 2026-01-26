@@ -356,7 +356,7 @@ class GoogleAuthView(APIView):
 
                 # Send welcome email asynchronously
                 if user_type == "player":
-                    dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/dashboard"
+                    dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/player/dashboard"
                 else:
                     dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/host/dashboard"
 

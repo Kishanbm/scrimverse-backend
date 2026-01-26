@@ -108,7 +108,7 @@ def send_tournament_reminders_24h():
         send_tournament_reminder_email_task.delay(
             host_email=tournament.host.user.email,
             host_name=tournament.host.user.username,
-            tournament_name=tournament.tournament_name,
+            tournament_name=tournament.title,
             start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
             total_registrations=TournamentRegistration.objects.filter(
                 tournament=tournament, status="confirmed"
@@ -125,8 +125,8 @@ def send_tournament_reminders_24h():
             send_player_tournament_reminder_email_task.delay(
                 user_email=reg.player.user.email,
                 user_name=reg.player.user.username,
-                tournament_name=tournament.tournament_name,
-                game_name=tournament.game,
+                tournament_name=tournament.title,
+                game_name=tournament.game_name,
                 start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
                 time_until="in 24 hours",
                 tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
@@ -144,8 +144,8 @@ def send_tournament_reminders_24h():
                             send_player_tournament_reminder_email_task.delay(
                                 user_email=member_player.user.email,
                                 user_name=member_player.user.username,
-                                tournament_name=tournament.tournament_name,
-                                game_name=tournament.game,
+                                tournament_name=tournament.title,
+                                game_name=tournament.game_name,
                                 start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
                                 time_until="in 24 hours",
                                 tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
@@ -184,7 +184,7 @@ def send_tournament_reminders_1h():
         send_tournament_reminder_email_task.delay(
             host_email=tournament.host.user.email,
             host_name=tournament.host.user.username,
-            tournament_name=tournament.tournament_name,
+            tournament_name=tournament.title,
             start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
             total_registrations=TournamentRegistration.objects.filter(
                 tournament=tournament, status="confirmed"
@@ -201,8 +201,8 @@ def send_tournament_reminders_1h():
             send_player_tournament_reminder_email_task.delay(
                 user_email=reg.player.user.email,
                 user_name=reg.player.user.username,
-                tournament_name=tournament.tournament_name,
-                game_name=tournament.game,
+                tournament_name=tournament.title,
+                game_name=tournament.game_name,
                 start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
                 time_until="in 1 hour",
                 tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
@@ -220,8 +220,8 @@ def send_tournament_reminders_1h():
                             send_player_tournament_reminder_email_task.delay(
                                 user_email=member_player.user.email,
                                 user_name=member_player.user.username,
-                                tournament_name=tournament.tournament_name,
-                                game_name=tournament.game,
+                                tournament_name=tournament.title,
+                                game_name=tournament.game_name,
                                 start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
                                 time_until="in 1 hour",
                                 tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
@@ -932,6 +932,12 @@ def send_registration_limit_reached_email_task(
         start_date,
         tournament_manage_url,
     )
+
+
+@shared_task(name="send_max_participants_email_task")
+def send_max_participants_email_task(*args, **kwargs):
+    """Alias for send_registration_limit_reached_email_task for test compatibility"""
+    return send_registration_limit_reached_email(*args, **kwargs)
 
 
 @shared_task(name="send_tournament_completed_email_task")

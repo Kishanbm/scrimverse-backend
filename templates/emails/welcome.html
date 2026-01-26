@@ -1,45 +1,83 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Welcome to Scrimverse!{% endblock %}
+{% block title %}Welcome to the Arena, {{ user_name }}! You’re officially in.{% endblock %}
 
 {% block content %}
-<h2>Welcome to Scrimverse, {{ user_name }}! 🎉</h2>
-
-<p>Thank you for joining the ultimate esports tournament platform! We're thrilled to have you as part of our gaming community.</p>
+<div class="status-pill">System Authorization: Complete</div>
 
 {% if user_type == 'player' %}
-<p>Your <strong>Player Account</strong> has been successfully created and you're all set to:</p>
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">What’s up, {{ user_name }}!</h1>
 
-<div class="info-box">
-    <p>✅ Join exciting tournaments</p>
-    <p>✅ Compete with players worldwide</p>
-    <p>✅ Track your performance</p>
-    <p>✅ Win amazing prizes</p>
+<p>Welcome to <strong>ScrimVerse</strong>, the ultimate battleground where your esports journey levels up. This isn't
+    just another gaming platform.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">This is YOUR arena.</h2>
+    <p style="font-weight: 700;">Your battleground. Your path to competitive glory.</p>
+    <p style="font-size: 14px; margin-top: 15px;">We didn’t just build a website; we built your new HQ. Whether you are
+        here to find your next scrim, track your stats, or connect with top-tier talent, everything you need is now at
+        your fingertips.</p>
 </div>
 
-<p>Get started by exploring tournaments and finding your next challenge!</p>
+<h3 style="color: #c0ff00; margin-top: 30px;">Here’s what you can do right now:</h3>
+<ul style="list-style: none; padding-left: 0; margin-top: 15px;">
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• CREATE YOUR TEAM</strong>
+        <p style="font-size: 14px; margin: 0;">Create your team and jump into the competition.</p>
+    </li>
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• JOIN A SCRIM/TOURNAMENT</strong>
+        <p style="font-size: 14px; margin: 0;">Stop waiting in lobbies and start playing.</p>
+    </li>
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• CLIMB THE RANKS</strong>
+        <p style="font-size: 14px; margin: 0;">Prove you have what it takes to be #1.</p>
+    </li>
+</ul>
+
+<p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 30px;">LET’S GET THOSE Ws.</p>
+
+<a href="{{ dashboard_url }}" class="button">ENTER PLAYER DASHBOARD</a>
 
 {% elif user_type == 'host' %}
-<p>Your <strong>Host Account</strong> has been successfully created!</p>
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 30px;">What’s good, {{ user_name }}!</h1>
 
-<div class="info-box">
-    <p>✅ Create and manage tournaments</p>
-    <p>✅ Build your gaming community</p>
-    <p>✅ Track registrations and results</p>
-    <p>✅ Access advanced analytics</p>
+<p>Welcome to the organizer’s side of <strong>ScrimVerse</strong>. You’re not just here to watch the game, you’re here
+    to run it.</p>
+
+<div class="content-box">
+    <h2 style="margin-bottom: 10px; font-size: 18px;">TAKE COMMAND.</h2>
+    <p style="font-weight: 700;">You now have the keys to the ultimate esports management dashboard.</p>
+    <p style="font-size: 14px; margin-top: 15px;">We’ve built this platform to handle the heavy lifting so you can focus
+        on what matters: building the hype and hosting legendary matches. Say goodbye to the chaos of manual tracking.
+        This is your new HQ.</p>
 </div>
 
-<p><strong>Next Step:</strong> Complete your host verification to start creating tournaments!</p>
+<h3 style="color: #c0ff00; margin-top: 30px;">Here’s how you take charge right now:</h3>
+<ul style="list-style: none; padding-left: 0; margin-top: 15px;">
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• HOST YOUR FIRST SCRIM/TOURNAMENT</strong>
+        <p style="font-size: 14px; margin: 0;">Set it up in minutes and go live.</p>
+    </li>
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• AUTOMATE PLAYER ONBOARDING</strong>
+        <p style="font-size: 14px; margin: 0;">Teams register and get match info automatically. No WhatsApp groups
+            needed.</p>
+    </li>
+    <li style="margin-bottom: 20px;">
+        <strong style="color: #ffffff; display: block; margin-bottom: 5px;">• AUTO-TRACK MATCHES & POINTS</strong>
+        <p style="font-size: 14px; margin: 0;">Submit scores once. Leaderboards update automatically. No delays.</p>
+    </li>
+</ul>
 
-{% else %}
-<p>Your account has been successfully created and you're all set to explore Scrimverse!</p>
+<p style="font-size: 20px; font-weight: 900; color: #c0ff00; margin-top: 30px;">GIVE THEM A STAGE.</p>
+
+<a href="{{ dashboard_url|default:'https://scrimverse.com/host/dashboard' }}" class="button">ENTER HOST DASHBOARD</a>
 {% endif %}
 
-<a href="{{ dashboard_url }}" class="button">Go to Dashboard</a>
-
-<div class="divider"></div>
-
-<p style="font-size: 14px; color: #6c757d;">
-    Need help getting started? Check out our <a href="{{ help_url }}" style="color: #667eea;">Getting Started Guide</a> or contact our support team.
-</p>
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
 {% endblock %}

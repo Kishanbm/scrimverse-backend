@@ -87,8 +87,13 @@ def send_welcome_email(user_email: str, user_name: str, dashboard_url: str, user
         "help_url": f"{settings.CORS_ALLOWED_ORIGINS[0]}/help",
         "user_type": user_type,  # Added user_type to context
     }
+    if user_type == "player":
+        subject = f"Welcome to the Arena, {user_name}! You’re officially in."
+    else:
+        subject = f"{user_name}, Manage Tournaments with Ease"
+
     return EmailService.send_email(
-        subject="Welcome to Scrimverse! 🎮",
+        subject=subject,
         template_name="welcome",
         context=context,
         recipient_list=[user_email],
@@ -172,7 +177,7 @@ def send_tournament_registration_email(
         "team_name": team_name,
     }
     return EmailService.send_email(
-        subject=f"Registration Confirmed - {tournament_name}",
+        subject=f"{user_name}, IN THE LOBBY: {tournament_name}!",
         template_name="tournament_registration",
         context=context,
         recipient_list=[user_email],
@@ -222,7 +227,7 @@ def send_host_approved_email(
         "guide_url": f"{settings.CORS_ALLOWED_ORIGINS[0]}/host-guide",
     }
     return EmailService.send_email(
-        subject="Host Account Approved - Scrimverse",
+        subject=f"{user_name}, Your Scrimverse Host Account is APPROVED!",
         template_name="host_approved",
         context=context,
         recipient_list=[user_email],
@@ -252,7 +257,7 @@ def send_tournament_created_email(
         "tournament_manage_url": tournament_manage_url,
     }
     return EmailService.send_email(
-        subject=f"Tournament Created - {tournament_name}",
+        subject=f"{host_name}, {tournament_name} is LIVE!",
         template_name="tournament_created",
         context=context,
         recipient_list=[host_email],
@@ -302,7 +307,7 @@ def send_registration_limit_reached_email(
         "tournament_manage_url": tournament_manage_url,
     }
     return EmailService.send_email(
-        subject=f"Registration Full - {tournament_name}",
+        subject=f"FULL! {tournament_name} Hit {max_participants} Registrations!",
         template_name="registration_limit_reached",
         context=context,
         recipient_list=[host_email],
@@ -336,7 +341,7 @@ def send_tournament_completed_email(
         "tournament_manage_url": tournament_manage_url,
     }
     return EmailService.send_email(
-        subject=f"Tournament Completed - {tournament_name}",
+        subject=f"{host_name}, {tournament_name} is COMPLETE!",
         template_name="tournament_completed",
         context=context,
         recipient_list=[host_email],

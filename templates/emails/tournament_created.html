@@ -1,30 +1,36 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Tournament Created Successfully{% endblock %}
+{% block title %}Tournament Created Successfully - {{ tournament_name }}{% endblock %}
 
 {% block content %}
-<h2>Tournament Created Successfully! 🎮</h2>
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 20px;">{{ host_name }}, let's GO!</h1>
 
-<p>Hi {{ host_name }},</p>
+<p style="font-size: 18px; color: #c0ff00; font-weight: 700; margin-bottom: 30px;">Tournament created successfully! {{
+    tournament_name }} is now open for registration.</p>
 
-<p>Your tournament <strong>{{ tournament_name }}</strong> has been successfully created and is now live!</p>
+<div style="margin-top: 30px;">
+    <h2 style="color: #ffffff; font-size: 20px; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px;">
+        Next steps:</h2>
 
-<div class="info-box">
-    <p><strong>Tournament:</strong> {{ tournament_name }}</p>
-    <p><strong>Game:</strong> {{ game_name }}</p>
-    <p><strong>Start Date:</strong> {{ start_date }}</p>
-    <p><strong>Max Participants:</strong> {{ max_participants }}</p>
-    <p><strong>Plan Type:</strong> {{ plan_type }}</p>
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 15px; font-size: 16px;">
+        <strong style="color: #ffffff;">Share tournament:</strong> Fill those slots fast
+    </p>
+
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 15px; font-size: 16px;">
+        <strong style="color: #ffffff;">Track registrations:</strong> Watch teams join in real time
+    </p>
+
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 30px; font-size: 16px;">
+        <strong style="color: #ffffff;">Run everything from one place:</strong> Teams, match info, IDs, passwords, and
+        points.
+    </p>
 </div>
 
-<p>Players can now register for your tournament. You can manage registrations, update details, and monitor activity from your host dashboard.</p>
+<a href="{{ tournament_manage_url }}" class="button">MANAGE TOURNAMENT</a>
 
-<a href="{{ tournament_manage_url }}" class="button">Manage Tournament</a>
-
-<div class="divider"></div>
-
-<p style="font-size: 14px; color: #6c757d;">
-    <strong>Tip:</strong> Share your tournament link with players to increase registrations: <br>
-    <a href="{{ tournament_url }}" style="color: #667eea;">{{ tournament_url }}</a>
-</p>
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
 {% endblock %}
