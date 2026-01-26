@@ -1,0 +1,38 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Tournament Reminder - {{ tournament_name }}{% endblock %}
+
+{% block content %}
+<h2>Tournament Reminder! ⏰</h2>
+
+<p>Hi {{ user_name }},</p>
+
+<p>This is a reminder that the tournament you registered for is starting <strong>{{ time_until }}</strong>!</p>
+
+<div class="info-box">
+    <p><strong>Tournament:</strong> {{ tournament_name }}</p>
+    <p><strong>Game:</strong> {{ game_name }}</p>
+    <p><strong>Start Time:</strong> {{ start_time }}</p>
+    {% if team_name %}
+    <p><strong>Your Team:</strong> {{ team_name }}</p>
+    {% endif %}
+    <p><strong>Event Type:</strong> {{ event_type }}</p>
+</div>
+
+<p>Make sure you're ready:</p>
+<ul style="margin: 15px 0; padding-left: 20px;">
+    <li>✅ Check your game is updated</li>
+    <li>✅ Ensure stable internet connection</li>
+    <li>✅ Review tournament rules</li>
+    <li>✅ Coordinate with your team</li>
+    <li>✅ Be online 15 minutes early</li>
+</ul>
+
+<a href="{{ tournament_url }}" class="button">View Tournament Details</a>
+
+<div class="divider"></div>
+
+<p style="font-size: 14px; color: #6c757d;">
+    <strong>Important:</strong> Make sure to join on time. Late entries may not be accepted. Good luck and have fun!
+</p>
+{% endblock %}

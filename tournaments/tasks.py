@@ -3,7 +3,9 @@ Celery tasks for tournaments app
 """
 import logging
 import os
+from datetime import timedelta
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models import F, Sum
@@ -14,6 +16,15 @@ from PIL import Image
 
 from accounts.models import HostProfile, PlayerProfile, Team, TeamStatistics
 from payments.models import Payment
+from scrimverse.email_utils import (
+    send_host_approved_email,
+    send_player_tournament_reminder_email,
+    send_registration_limit_reached_email,
+    send_tournament_completed_email,
+    send_tournament_created_email,
+    send_tournament_registration_email,
+    send_tournament_reminder_email,
+)
 from tournaments.models import Match, MatchScore, RoundScore, Tournament, TournamentRegistration
 from tournaments.services import TournamentGroupService
 
@@ -71,6 +82,158 @@ def cleanup_unpaid_tournaments_and_registrations():
         "payments_deleted": count,
         "timestamp": now.isoformat(),
     }
+
+
+@shared_task
+def send_tournament_reminders_24h():
+    """
+    Send tournament reminders 24 hours before start
+    Runs every hour via Celery Beat
+    """
+    now = timezone.now()
+    tomorrow = now + timedelta(hours=24)
+
+    # Find tournaments starting in approximately 24 hours (within 1 hour window)
+    tournaments = Tournament.objects.filter(
+        tournament_start__gte=tomorrow - timedelta(minutes=30),
+        tournament_start__lte=tomorrow + timedelta(minutes=30),
+        status="upcoming",
+    )
+
+    frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+    emails_sent = 0
+
+    for tournament in tournaments:
+        # Send to host
+        send_tournament_reminder_email_task.delay(
+            host_email=tournament.host.user.email,
+            host_name=tournament.host.user.username,
+            tournament_name=tournament.tournament_name,
+            start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+            total_registrations=TournamentRegistration.objects.filter(
+                tournament=tournament, status="confirmed"
+            ).count(),
+            tournament_manage_url=f"{frontend_url}/host/tournaments/{tournament.id}/manage",
+        )
+        emails_sent += 1
+
+        # Send to all registered players
+        registrations = TournamentRegistration.objects.filter(tournament=tournament, status="confirmed")
+
+        for reg in registrations:
+            # Send to captain
+            send_player_tournament_reminder_email_task.delay(
+                user_email=reg.player.user.email,
+                user_name=reg.player.user.username,
+                tournament_name=tournament.tournament_name,
+                game_name=tournament.game,
+                start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                time_until="in 24 hours",
+                tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
+                event_type="Scrim" if tournament.event_mode == "SCRIM" else "Tournament",
+                team_name=reg.team_name,
+            )
+            emails_sent += 1
+
+            # Send to all team members
+            if reg.team_members:
+                for member in reg.team_members:
+                    if member.get("is_registered") and member.get("player_id"):
+                        try:
+                            member_player = PlayerProfile.objects.get(id=member["player_id"])
+                            send_player_tournament_reminder_email_task.delay(
+                                user_email=member_player.user.email,
+                                user_name=member_player.user.username,
+                                tournament_name=tournament.tournament_name,
+                                game_name=tournament.game,
+                                start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                                time_until="in 24 hours",
+                                tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
+                                event_type="Scrim" if tournament.event_mode == "SCRIM" else "Tournament",
+                                team_name=reg.team_name,
+                            )
+                            emails_sent += 1
+                        except PlayerProfile.DoesNotExist:
+                            pass
+
+    logger.info(f"24h tournament reminders sent: {emails_sent} emails for {tournaments.count()} tournaments")
+    return {"emails_sent": emails_sent, "tournaments": tournaments.count()}
+
+
+@shared_task
+def send_tournament_reminders_1h():
+    """
+    Send tournament reminders 1 hour before start
+    Runs every 5 minutes via Celery Beat
+    """
+    now = timezone.now()
+    one_hour_later = now + timedelta(hours=1)
+
+    # Find tournaments starting in approximately 1 hour (within 5 minute window)
+    tournaments = Tournament.objects.filter(
+        tournament_start__gte=one_hour_later - timedelta(minutes=2),
+        tournament_start__lte=one_hour_later + timedelta(minutes=3),
+        status="upcoming",
+    )
+
+    frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+    emails_sent = 0
+
+    for tournament in tournaments:
+        # Send to host
+        send_tournament_reminder_email_task.delay(
+            host_email=tournament.host.user.email,
+            host_name=tournament.host.user.username,
+            tournament_name=tournament.tournament_name,
+            start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+            total_registrations=TournamentRegistration.objects.filter(
+                tournament=tournament, status="confirmed"
+            ).count(),
+            tournament_manage_url=f"{frontend_url}/host/tournaments/{tournament.id}/manage",
+        )
+        emails_sent += 1
+
+        # Send to all registered players
+        registrations = TournamentRegistration.objects.filter(tournament=tournament, status="confirmed")
+
+        for reg in registrations:
+            # Send to captain
+            send_player_tournament_reminder_email_task.delay(
+                user_email=reg.player.user.email,
+                user_name=reg.player.user.username,
+                tournament_name=tournament.tournament_name,
+                game_name=tournament.game,
+                start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                time_until="in 1 hour",
+                tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
+                event_type="Scrim" if tournament.event_mode == "SCRIM" else "Tournament",
+                team_name=reg.team_name,
+            )
+            emails_sent += 1
+
+            # Send to all team members
+            if reg.team_members:
+                for member in reg.team_members:
+                    if member.get("is_registered") and member.get("player_id"):
+                        try:
+                            member_player = PlayerProfile.objects.get(id=member["player_id"])
+                            send_player_tournament_reminder_email_task.delay(
+                                user_email=member_player.user.email,
+                                user_name=member_player.user.username,
+                                tournament_name=tournament.tournament_name,
+                                game_name=tournament.game,
+                                start_time=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                                time_until="in 1 hour",
+                                tournament_url=f"{frontend_url}/tournaments/{tournament.id}",
+                                event_type="Scrim" if tournament.event_mode == "SCRIM" else "Tournament",
+                                team_name=reg.team_name,
+                            )
+                            emails_sent += 1
+                        except PlayerProfile.DoesNotExist:
+                            pass
+
+    logger.info(f"1h tournament reminders sent: {emails_sent} emails for {tournaments.count()} tournaments")
+    return {"emails_sent": emails_sent, "tournaments": tournaments.count()}
 
 
 @shared_task
@@ -639,3 +802,163 @@ def process_tournament_banner(tournament_id, image_path):
     except Exception as e:
         logger.error(f"Error processing banner: {e}")
         return {"error": str(e)}
+
+
+# ============================================================================
+# TOURNAMENT EMAIL TASKS
+# ============================================================================
+# Tournament-related email notifications
+# ============================================================================
+
+
+# Player-Side Tournament Emails
+@shared_task(name="send_tournament_registration_email_task")
+def send_tournament_registration_email_task(
+    user_email: str,
+    user_name: str,
+    tournament_name: str,
+    game_name: str,
+    start_date: str,
+    registration_id: str,
+    tournament_url: str,
+    team_name: str = None,
+):
+    """Async task to send tournament registration confirmation email"""
+    return send_tournament_registration_email(
+        user_email,
+        user_name,
+        tournament_name,
+        game_name,
+        start_date,
+        registration_id,
+        tournament_url,
+        team_name,
+    )
+
+
+@shared_task(name="send_player_tournament_reminder_email_task")
+def send_player_tournament_reminder_email_task(
+    user_email: str,
+    user_name: str,
+    tournament_name: str,
+    game_name: str,
+    start_time: str,
+    time_until: str,
+    tournament_url: str,
+    event_type: str = "Tournament",
+    team_name: str = None,
+):
+    """Async task to send tournament reminder email to players"""
+    return send_player_tournament_reminder_email(
+        user_email,
+        user_name,
+        tournament_name,
+        game_name,
+        start_time,
+        time_until,
+        tournament_url,
+        event_type,
+        team_name,
+    )
+
+
+# Host-Side Tournament Emails
+@shared_task(name="send_host_approved_email_task")
+def send_host_approved_email_task(
+    user_email: str, user_name: str, host_name: str, approved_at: str, host_dashboard_url: str
+):
+    """Async task to send host account approval email"""
+    return send_host_approved_email(user_email, user_name, host_name, approved_at, host_dashboard_url)
+
+
+@shared_task(name="send_tournament_created_email_task")
+def send_tournament_created_email_task(
+    host_email: str,
+    host_name: str,
+    tournament_name: str,
+    game_name: str,
+    start_date: str,
+    max_participants: int,
+    plan_type: str,
+    tournament_url: str,
+    tournament_manage_url: str,
+):
+    """Async task to send tournament created confirmation email"""
+    return send_tournament_created_email(
+        host_email,
+        host_name,
+        tournament_name,
+        game_name,
+        start_date,
+        max_participants,
+        plan_type,
+        tournament_url,
+        tournament_manage_url,
+    )
+
+
+@shared_task(name="send_tournament_reminder_email_task")
+def send_tournament_reminder_email_task(
+    host_email: str,
+    host_name: str,
+    tournament_name: str,
+    start_time: str,
+    total_registrations: int,
+    tournament_manage_url: str,
+):
+    """Async task to send tournament reminder email (same day)"""
+    return send_tournament_reminder_email(
+        host_email, host_name, tournament_name, start_time, total_registrations, tournament_manage_url
+    )
+
+
+@shared_task(name="send_registration_limit_reached_email_task")
+def send_registration_limit_reached_email_task(
+    host_email: str,
+    host_name: str,
+    tournament_name: str,
+    total_registrations: int,
+    max_participants: int,
+    start_date: str,
+    tournament_manage_url: str,
+):
+    """Async task to send registration limit reached notification"""
+    return send_registration_limit_reached_email(
+        host_email,
+        host_name,
+        tournament_name,
+        total_registrations,
+        max_participants,
+        start_date,
+        tournament_manage_url,
+    )
+
+
+@shared_task(name="send_tournament_completed_email_task")
+def send_tournament_completed_email_task(
+    host_email: str,
+    host_name: str,
+    tournament_name: str,
+    completed_at: str,
+    total_participants: int,
+    total_matches: int,
+    winner_name: str,
+    runner_up_name: str,
+    total_registrations: int,
+    results_published: bool,
+    tournament_manage_url: str,
+):
+    """Async task to send tournament completion summary email"""
+    return send_tournament_completed_email(
+        host_email,
+        host_name,
+        tournament_name,
+        completed_at,
+        total_participants,
+        total_matches,
+        winner_name,
+        runner_up_name,
+        total_registrations,
+        results_published,
+        tournament_manage_url,
+    )

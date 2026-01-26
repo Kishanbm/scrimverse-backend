@@ -1,5 +1,7 @@
 import json
 
+from django.conf import settings
+
 from rest_framework import serializers
 
 from accounts.models import PlayerProfile, Team, TeamMember, User
@@ -107,8 +109,6 @@ class TournamentSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         """Custom representation to ensure default banner fallback"""
         data = super().to_representation(instance)
-        from django.conf import settings
-
         # Check if banner_image is null in the model instance
         if not instance.banner_image:
             default_banner_path = instance.get_default_banner_path()
@@ -160,8 +160,6 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
     def get_banner_image(self, obj):
         """Return custom banner for premium, default banner for basic/featured/premium fallback"""
-        from django.conf import settings
-
         # If custom banner exists, return it
         if obj.banner_image:
             if settings.USE_S3:

@@ -1,4 +1,11 @@
+import json
+
 from django.contrib import admin
+from django.utils.html import format_html
+
+from pygments import highlight
+from pygments.formatters import HtmlFormatter
+from pygments.lexers import JsonLexer
 
 from .models import Payment, PlanPricing, Refund
 
@@ -152,14 +159,6 @@ class PaymentAdmin(admin.ModelAdmin):
 
     def meta_info_pretty(self, obj):
         """Display meta_info in a readable JSON format"""
-        import json
-
-        from django.utils.html import format_html
-
-        from pygments import highlight
-        from pygments.formatters import HtmlFormatter
-        from pygments.lexers import JsonLexer
-
         # Format JSON with indent
         response = json.dumps(obj.meta_info, indent=2)
 

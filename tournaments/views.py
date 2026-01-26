@@ -1,9 +1,15 @@
+import json
 import logging
+from datetime import date, datetime, time
+from decimal import Decimal
+from uuid import uuid4
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from decouple import config
 from rest_framework import generics, parsers, permissions, status
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
@@ -11,14 +17,23 @@ from rest_framework.views import APIView
 
 from accounts.models import HostProfile, PlayerProfile, TeamMember, User
 from accounts.tasks import update_host_rating_cache
-from tournaments.models import HostRating, RoundScore, Tournament, TournamentRegistration
+from payments.models import Payment, PlanPricing
+from payments.services import phonepe_service
+from tournaments.models import HostRating, Match, RoundScore, Tournament, TournamentRegistration
 from tournaments.serializers import (
     HostRatingSerializer,
     TournamentListSerializer,
     TournamentRegistrationSerializer,
     TournamentSerializer,
 )
-from tournaments.tasks import update_host_dashboard_stats, update_leaderboard, update_platform_statistics
+from tournaments.tasks import (
+    send_tournament_completed_email_task,
+    send_tournament_created_email_task,
+    send_tournament_registration_email_task,
+    update_host_dashboard_stats,
+    update_leaderboard,
+    update_platform_statistics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -158,13 +173,6 @@ class TournamentCreateView(generics.CreateAPIView):
 
     def create(self, request, *args, **kwargs):
         """Validate tournament data and initiate payment"""
-        from uuid import uuid4
-
-        from decouple import config
-
-        from payments.models import Payment
-        from payments.services import phonepe_service
-
         logger.debug(
             f"Tournament creation request - Host: {request.user.id}, Event mode: {request.data.get('event_mode')}"
         )
@@ -193,8 +201,6 @@ class TournamentCreateView(generics.CreateAPIView):
         event_mode = validated_data.get("event_mode", "TOURNAMENT")
 
         # Get dynamic price from database (or fallback to defaults)
-        from payments.models import PlanPricing
-
         amount = PlanPricing.get_price(event_mode, plan_type)
 
         # ✅ CHECK IF FREE PLAN (amount <= 0)
@@ -212,6 +218,23 @@ class TournamentCreateView(generics.CreateAPIView):
             # Invalidate caches
             cache.delete("tournaments:list:all")
             cache.delete(f"host:dashboard:{request.user.host_profile.id}")
+
+            # Send tournament created email task
+            try:
+                send_tournament_created_email_task.delay(
+                    host_email=request.user.email,
+                    host_name=request.user.username,
+                    tournament_name=tournament.title,
+                    game_name=tournament.game_name,
+                    start_date=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                    max_participants=tournament.max_participants,
+                    plan_type=f"{plan_type.title()} - {event_mode.title()}",
+                    tournament_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}",  # noqa: E501
+                    tournament_manage_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}/manage",  # noqa: E501
+                )
+                logger.info(f"Tournament created email task queued for {request.user.email}")
+            except Exception as e:
+                logger.error(f"Failed to queue tournament created email task: {str(e)}")
 
             return Response(
                 {
@@ -237,9 +260,6 @@ class TournamentCreateView(generics.CreateAPIView):
         redirect_url = f"{frontend_url}/host/dashboard?payment_status=check&order_id={merchant_order_id}"
 
         # Store tournament data as JSON (serialize files as paths if they exist)
-        from datetime import date, datetime, time
-        from decimal import Decimal
-
         pending_tournament_data = {}
         # Fields to exclude (we set these explicitly when creating the tournament)
         excluded_fields = {"plan_payment_status", "plan_payment_id"}
@@ -432,13 +452,6 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     def perform_create(self, serializer):
-        from uuid import uuid4
-
-        from decouple import config
-
-        from payments.models import Payment
-        from payments.services import phonepe_service
-
         logger.debug(
             f"Tournament registration request - Player: {self.request.user.id}, Tournament: {self.kwargs['tournament_id']}"  # noqa E501
         )
@@ -646,6 +659,44 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
             cache.delete(f"host:dashboard:{tournament.host.id}")
 
             update_host_dashboard_stats.delay(tournament.host.id)
+
+            # Send registration emails task
+            try:
+                # 1. Send to Captain
+                send_tournament_registration_email_task.delay(
+                    user_email=player_profile.user.email,
+                    user_name=player_profile.user.username,
+                    tournament_name=tournament.title,
+                    game_name=tournament.game_name,
+                    start_date=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                    registration_id=str(registration.id),
+                    tournament_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}",  # noqa: E501
+                    team_name=registration.team_name,
+                )
+
+                # 2. Send to Team Members
+                if registration.team_members:
+                    captain_name = player_profile.user.username
+                    for member in registration.team_members:
+                        member_username = member.get("username")
+                        if member_username and member_username != captain_name:
+                            try:
+                                member_user = User.objects.get(username=member_username, user_type="player")
+                                send_tournament_registration_email_task.delay(
+                                    user_email=member_user.email,
+                                    user_name=member_user.username,
+                                    tournament_name=tournament.title,
+                                    game_name=tournament.game_name,
+                                    start_date=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
+                                    registration_id=str(registration.id),
+                                    tournament_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}",  # noqa: E501
+                                    team_name=registration.team_name,
+                                )
+                            except User.DoesNotExist:
+                                continue
+                logger.info("Tournament registration email tasks queued for captain and team members")
+            except Exception as e:
+                logger.error(f"Failed to queue tournament registration email tasks: {str(e)}")
 
 
 class PlayerTournamentRegistrationsView(generics.ListAPIView):
@@ -1266,8 +1317,6 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
 
         # Handle JSON fields
         if "round_names" in filtered_data:
-            import json
-
             try:
                 if isinstance(filtered_data["round_names"], str):
                     filtered_data["round_names"] = json.loads(filtered_data["round_names"])
@@ -1275,8 +1324,6 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
                 pass  # Let serializer validation handle invalid JSON
 
         if "rounds" in filtered_data:
-            import json
-
             try:
                 if isinstance(filtered_data["rounds"], str):
                     filtered_data["rounds"] = json.loads(filtered_data["rounds"])
@@ -1323,6 +1370,45 @@ class EndTournamentView(generics.GenericAPIView):
         logger.info(
             f"Tournament ended - ID: {tournament.id}, Title: {tournament.title}, All rounds completed: {all_rounds_completed}"  # noqa E501
         )
+
+        # 📧 SEND TOURNAMENT COMPLETED EMAIL TO HOST
+        # Get tournament statistics
+        total_participants = TournamentRegistration.objects.filter(tournament=tournament, status="confirmed").count()
+
+        total_matches = Match.objects.filter(group__tournament=tournament).count()
+
+        # Get winner information
+        winner_name = "TBD"
+        runner_up_name = "TBD"
+        if tournament.winners:
+            # Get the final round winner
+            final_round_key = str(len(tournament.rounds)) if tournament.rounds else "1"
+            winner_id = tournament.winners.get(final_round_key)
+            if winner_id:
+                try:
+                    winner_reg = TournamentRegistration.objects.get(id=winner_id)
+                    winner_name = winner_reg.team_name or winner_reg.player.user.username
+                except TournamentRegistration.DoesNotExist:
+                    pass
+
+        frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+        tournament_manage_url = f"{frontend_url}/host/tournaments/{tournament.id}/manage"
+
+        send_tournament_completed_email_task.delay(
+            host_email=tournament.host.user.email,
+            host_name=tournament.host.user.username,
+            tournament_name=tournament.tournament_name,
+            completed_at=timezone.now().strftime("%B %d, %Y at %I:%M %p"),
+            total_participants=total_participants,
+            total_matches=total_matches,
+            winner_name=winner_name,
+            runner_up_name=runner_up_name,
+            total_registrations=total_participants,
+            results_published=bool(tournament.winners),
+            tournament_manage_url=tournament_manage_url,
+        )
+
+        logger.info(f"Tournament completed email sent to host: {tournament.host.user.email}")
 
         # Trigger leaderboard update asynchronously
         update_leaderboard.delay()
