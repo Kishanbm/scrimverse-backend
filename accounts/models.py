@@ -31,6 +31,10 @@ class User(AbstractUser):
         null=True, blank=True, help_text="When verification email was sent"
     )
 
+    # Password Reset
+    password_reset_token = models.CharField(max_length=100, blank=True, null=True, help_text="Token for password reset")
+    password_reset_sent_at = models.DateTimeField(null=True, blank=True, help_text="When password reset email was sent")
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

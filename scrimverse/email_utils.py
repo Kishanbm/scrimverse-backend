@@ -116,11 +116,12 @@ def send_verification_email(user_email: str, user_name: str, verification_url: s
     )
 
 
-def send_password_reset_email(user_email: str, user_name: str, reset_url: str) -> bool:
+def send_password_reset_email(user_email: str, user_name: str, reset_url: str, user_type: str = "") -> bool:
     """Send password reset email"""
     context = {
         "user_name": user_name,
         "reset_url": reset_url,
+        "user_type": user_type,
     }
     return EmailService.send_email(
         subject="Password Reset Request - Scrimverse",
@@ -178,55 +179,31 @@ def send_tournament_registration_email(
     )
 
 
-def send_tournament_results_email(
-    user_email: str,
-    user_name: str,
-    tournament_name: str,
-    position: int,
-    total_participants: int,
-    results_url: str,
-    team_name: Optional[str] = None,
-) -> bool:
-    """Send tournament results email"""
-    context = {
-        "user_name": user_name,
-        "tournament_name": tournament_name,
-        "position": position,
-        "total_participants": total_participants,
-        "results_url": results_url,
-        "team_name": team_name,
-    }
-    return EmailService.send_email(
-        subject=f"Results Published - {tournament_name}",
-        template_name="tournament_results",
-        context=context,
-        recipient_list=[user_email],
-    )
-
-
-def send_premium_tournament_promo_email(
+def send_player_tournament_reminder_email(
     user_email: str,
     user_name: str,
     tournament_name: str,
     game_name: str,
-    prize_pool: str,
-    registration_deadline: str,
-    start_date: str,
+    start_time: str,
+    time_until: str,
     tournament_url: str,
+    event_type: str = "Tournament",
+    team_name: Optional[str] = None,
 ) -> bool:
-    """Send premium tournament promotion email"""
+    """Send tournament reminder email to players"""
     context = {
         "user_name": user_name,
         "tournament_name": tournament_name,
         "game_name": game_name,
-        "prize_pool": prize_pool,
-        "registration_deadline": registration_deadline,
-        "start_date": start_date,
+        "start_time": start_time,
+        "time_until": time_until,
         "tournament_url": tournament_url,
+        "event_type": event_type,
+        "team_name": team_name,
     }
     return EmailService.send_email(
-        subject=f"Premium Tournament Alert - {tournament_name}",
-        template_name="premium_tournament_promo",
+        subject=f"Reminder: {tournament_name} starts {time_until}",
+        template_name="tournament_reminder_player",
         context=context,
         recipient_list=[user_email],
     )

@@ -42,6 +42,14 @@ app.conf.beat_schedule = {
         "task": "tournaments.tasks.update_leaderboard",
         "schedule": crontab(minute="*/30"),  # Run every 30 minutes
     },
+    "send-tournament-reminders-24h": {
+        "task": "tournaments.tasks.send_tournament_reminders_24h",
+        "schedule": crontab(minute=0),  # Run every hour at minute 0
+    },
+    "send-tournament-reminders-1h": {
+        "task": "tournaments.tasks.send_tournament_reminders_1h",
+        "schedule": crontab(minute="*/5"),  # Run every 5 minutes
+    },
 }
 
 app.conf.timezone = "Asia/Kolkata"

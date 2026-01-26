@@ -1,4 +1,5 @@
 import logging
+import secrets
 from datetime import timedelta
 
 from django.conf import settings
@@ -26,7 +27,8 @@ from accounts.serializers import (
     TeamSerializer,
     UserSerializer,
 )
-from accounts.tasks import process_team_invitation
+from accounts.tasks import process_team_invitation, send_verification_email_task, send_welcome_email_task
+from accounts.validators import validate_aadhar_image
 from tournaments.models import RoundScore, TournamentRegistration
 
 logger = logging.getLogger(__name__)
@@ -42,13 +44,38 @@ class PlayerRegistrationView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
+        email = request.data.get("email")
+
+        # Check if user already exists with this email
+        if email:
+            try:
+                existing_user = User.objects.get(email=email)
+
+                # If user exists but is NOT verified, delete the old account and allow re-registration
+                if not existing_user.is_email_verified:
+                    logger.info(
+                        f"Deleting unverified account for {email} to allow re-registration (user_type: {existing_user.user_type})"  # noqa: E501
+                    )
+                    existing_user.delete()
+                    # Continue with registration below
+                else:
+                    # User exists and is verified - return error
+                    return Response(
+                        {
+                            "error": "An account with this email already exists and is verified. Please login instead.",
+                            "email": email,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except User.DoesNotExist:
+                # User doesn't exist, continue with registration
+                pass
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
         # Generate verification token
-        import secrets
-
         verification_token = secrets.token_urlsafe(32)
         user.email_verification_token = verification_token
         user.email_verification_sent_at = timezone.now()
@@ -59,8 +86,6 @@ class PlayerRegistrationView(generics.CreateAPIView):
         )
 
         # Send verification email (NOT welcome email)
-        from accounts.tasks import send_verification_email_task
-
         frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
         verification_url = f"{frontend_url}/verify-email/{verification_token}"
 
@@ -90,13 +115,38 @@ class HostRegistrationView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
 
     def create(self, request, *args, **kwargs):
+        email = request.data.get("email")
+
+        # Check if user already exists with this email
+        if email:
+            try:
+                existing_user = User.objects.get(email=email)
+
+                # If user exists but is NOT verified, delete the old account and allow re-registration
+                if not existing_user.is_email_verified:
+                    logger.info(
+                        f"Deleting unverified account for {email} to allow re-registration (user_type: {existing_user.user_type})"  # noqa: E501
+                    )
+                    existing_user.delete()
+                    # Continue with registration below
+                else:
+                    # User exists and is verified - return error
+                    return Response(
+                        {
+                            "error": "An account with this email already exists and is verified. Please login instead.",
+                            "email": email,
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except User.DoesNotExist:
+                # User doesn't exist, continue with registration
+                pass
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
         # Generate verification token
-        import secrets
-
         verification_token = secrets.token_urlsafe(32)
         user.email_verification_token = verification_token
         user.email_verification_sent_at = timezone.now()
@@ -107,8 +157,6 @@ class HostRegistrationView(generics.CreateAPIView):
         )
 
         # Send verification email (NOT welcome email)
-        from accounts.tasks import send_verification_email_task
-
         frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
         verification_url = f"{frontend_url}/verify-email/{verification_token}"
 
@@ -307,8 +355,6 @@ class GoogleAuthView(APIView):
                     HostProfile.objects.create(user=user)
 
                 # Send welcome email asynchronously
-                from accounts.tasks import send_welcome_email_task
-
                 if user_type == "player":
                     dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/dashboard"
                 else:
@@ -454,8 +500,6 @@ class UploadAadharView(APIView):
             )
 
         # Validate files using the model's validators
-        from accounts.validators import validate_aadhar_image
-
         try:
             validate_aadhar_image(aadhar_front)
             validate_aadhar_image(aadhar_back)

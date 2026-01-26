@@ -5,10 +5,12 @@ Payment Views for PhonePe Integration
 import hashlib
 import json
 import logging
+import traceback
 from datetime import datetime, time
 from decimal import Decimal
 from uuid import uuid4
 
+from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
 from django.http import JsonResponse
@@ -21,11 +23,20 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import HostProfile, PlayerProfile, Team, TeamMember, User
+from payments.models import Payment, Refund
+from payments.serializers import (
+    InitiatePaymentSerializer,
+    InitiateRefundSerializer,
+    PaymentSerializer,
+    PaymentStatusSerializer,
+)
+from payments.services import phonepe_service
 from tournaments.models import Tournament, TournamentRegistration
-
-from .models import Payment, Refund
-from .serializers import InitiatePaymentSerializer, InitiateRefundSerializer, PaymentSerializer, PaymentStatusSerializer
-from .services import phonepe_service
+from tournaments.tasks import (
+    send_registration_limit_reached_email_task,
+    send_tournament_created_email_task,
+    send_tournament_registration_email_task,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +301,27 @@ def check_payment_status(request):
 
                             logger.info(f"Tournament linked to payment check: {tournament.id}")
 
+                            # 📧 SEND TOURNAMENT CREATED EMAIL TO HOST
+                            frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+                            tournament_url = f"{frontend_url}/tournaments/{tournament.id}"
+                            tournament_manage_url = f"{frontend_url}/host/tournaments/{tournament.id}/manage"
+                            start_date = tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p")
+                            event_type = "Scrim" if tournament.event_mode == "SCRIM" else "Tournament"
+
+                            send_tournament_created_email_task.delay(
+                                host_email=host.user.email,
+                                host_name=host.user.username,
+                                tournament_name=tournament.title,
+                                game_name=tournament.game_name,
+                                start_date=start_date,
+                                max_participants=tournament.max_participants,
+                                plan_type=f"{tournament.plan_type} - {event_type}",
+                                tournament_url=tournament_url,
+                                tournament_manage_url=tournament_manage_url,
+                            )
+
+                            logger.info(f"Tournament created email sent to host: {host.user.email}")
+
                             # Clear tournament_data from meta_info (no longer needed)
                             payment.meta_info.pop("tournament_data", None)
                             payment.save()
@@ -369,6 +401,64 @@ def check_payment_status(request):
                                 payment.save()
 
                             logger.info(f"Registration linked to payment: {registration.id}")
+
+                            # 📧 SEND REGISTRATION SUCCESS EMAIL TO ALL TEAM MEMBERS
+                            frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+                            tournament_url = f"{frontend_url}/tournaments/{tournament.id}"
+                            start_date = tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p")
+                            event_type = "Scrim" if tournament.event_mode == "SCRIM" else "Tournament"
+
+                            # Send to captain (player who registered)
+                            send_tournament_registration_email_task.delay(
+                                user_email=player.user.email,
+                                user_name=player.user.username,
+                                tournament_name=tournament.title,
+                                game_name=tournament.game_name,
+                                start_date=start_date,
+                                registration_id=str(registration.id),
+                                tournament_url=tournament_url,
+                                team_name=team_name,
+                            )
+
+                            # Send to all team members
+                            for member_data in team_members_data:
+                                if member_data.get("is_registered") and member_data.get("player_id"):
+                                    try:
+                                        member_player = PlayerProfile.objects.get(id=member_data["player_id"])
+                                        send_tournament_registration_email_task.delay(
+                                            user_email=member_player.user.email,
+                                            user_name=member_player.user.username,
+                                            tournament_name=tournament.title,
+                                            game_name=tournament.game_name,
+                                            start_date=start_date,
+                                            registration_id=str(registration.id),
+                                            tournament_url=tournament_url,
+                                            team_name=team_name,
+                                        )
+                                        logger.info(
+                                            f"Registration email sent to team member: {member_player.user.email}"
+                                        )
+                                    except PlayerProfile.DoesNotExist:
+                                        pass
+
+                            logger.info(f"Registration success emails queued for {len(team_members_data) + 1} players")
+
+                            # 📧 CHECK IF TOURNAMENT IS FULL - SEND SLOTS FILLED EMAIL TO HOST
+                            registration_count = TournamentRegistration.objects.filter(
+                                tournament=tournament, status="confirmed"
+                            ).count()
+
+                            if registration_count >= tournament.max_participants:
+                                send_registration_limit_reached_email_task.delay(
+                                    host_email=tournament.host.user.email,
+                                    host_name=tournament.host.user.username,
+                                    tournament_name=tournament.tournament_name,
+                                    total_registrations=registration_count,
+                                    max_participants=tournament.max_participants,
+                                    start_date=tournament.tournament_start.strftime("%B %d, %Y"),
+                                    tournament_manage_url=f"{frontend_url}/host/tournaments/{tournament.id}/manage",
+                                )
+                                logger.info(f"Slots filled email sent to host: {tournament.host.user.email}")
 
                             # Clear registration_data from meta_info (no longer needed)
                             payment.meta_info.pop("registration_data", None)
@@ -662,6 +752,31 @@ def phonepe_callback(request):
 
                                     logger.info(f"Tournament linked from webhook: {tournament.id} - {tournament.title}")
 
+                                    # 📧 SEND TOURNAMENT CREATED EMAIL TO HOST
+                                    frontend_url = config(
+                                        "CORS_ALLOWED_ORIGINS", default="http://localhost:3000"
+                                    ).split(",")[0]
+                                    tournament_url = f"{frontend_url}/tournaments/{tournament.id}"
+                                    tournament_manage_url = f"{frontend_url}/host/tournaments/{tournament.id}/manage"
+                                    start_date = tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p")
+                                    event_type = "Scrim" if tournament.event_mode == "SCRIM" else "Tournament"
+
+                                    send_tournament_created_email_task.delay(
+                                        host_email=host.user.email,
+                                        host_name=host.user.username,
+                                        tournament_name=tournament.tournament_name,
+                                        game_name=tournament.game,
+                                        start_date=start_date,
+                                        max_participants=tournament.max_participants,
+                                        plan_type=f"{tournament.plan_type} - {event_type}",
+                                        tournament_url=tournament_url,
+                                        tournament_manage_url=tournament_manage_url,
+                                    )
+
+                                    logger.info(
+                                        f"Tournament created email sent from webhook to host: {host.user.email}"
+                                    )
+
                                     # Clear tournament_data from meta_info (no longer needed and contains Decimals)
                                     payment.meta_info.pop("tournament_data", None)
 
@@ -744,6 +859,66 @@ def phonepe_callback(request):
                                 payment.registration = registration
                                 logger.info(f"Registration linked from webhook: {registration.id}")
 
+                                # 📧 SEND REGISTRATION SUCCESS EMAIL TO ALL TEAM MEMBERS
+                                frontend_url = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(
+                                    ","
+                                )[0]
+                                tournament_url = f"{frontend_url}/tournaments/{tournament.id}"
+                                start_date = tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p")
+
+                                # Send to captain
+                                send_tournament_registration_email_task.delay(
+                                    user_email=player.user.email,
+                                    user_name=player.user.username,
+                                    tournament_name=tournament.tournament_name,
+                                    game_name=tournament.game,
+                                    start_date=start_date,
+                                    registration_id=str(registration.id),
+                                    tournament_url=tournament_url,
+                                    team_name=team_name,
+                                )
+
+                                # Send to all team members
+                                for member_data in team_members_data:
+                                    if member_data.get("is_registered") and member_data.get("player_id"):
+                                        try:
+                                            member_player = PlayerProfile.objects.get(id=member_data["player_id"])
+                                            send_tournament_registration_email_task.delay(
+                                                user_email=member_player.user.email,
+                                                user_name=member_player.user.username,
+                                                tournament_name=tournament.tournament_name,
+                                                game_name=tournament.game,
+                                                start_date=start_date,
+                                                registration_id=str(registration.id),
+                                                tournament_url=tournament_url,
+                                                team_name=team_name,
+                                            )
+                                        except PlayerProfile.DoesNotExist:
+                                            pass
+
+                                logger.info(
+                                    f"Registration emails queued from webhook for {len(team_members_data) + 1} players"
+                                )
+
+                                # 📧 CHECK IF TOURNAMENT IS FULL - SEND SLOTS FILLED EMAIL TO HOST
+                                registration_count = TournamentRegistration.objects.filter(
+                                    tournament=tournament, status="confirmed"
+                                ).count()
+
+                                if registration_count >= tournament.max_participants:
+                                    send_registration_limit_reached_email_task.delay(
+                                        host_email=tournament.host.user.email,
+                                        host_name=tournament.host.user.username,
+                                        tournament_name=tournament.tournament_name,
+                                        total_registrations=registration_count,
+                                        max_participants=tournament.max_participants,
+                                        start_date=tournament.tournament_start.strftime("%B %d, %Y"),
+                                        tournament_manage_url=f"{frontend_url}/host/tournaments/{tournament.id}/manage",
+                                    )
+                                    logger.info(
+                                        f"Slots filled email sent from webhook to host: {tournament.host.user.email}"
+                                    )
+
                                 # Clear registration_data from meta_info (no longer needed)
                                 payment.meta_info.pop("registration_data", None)
                                 payment.save()
@@ -810,8 +985,6 @@ def phonepe_callback(request):
         logger.error("=" * 80)
         logger.error(f"❌ Error processing callback: {str(e)}")
         logger.error(f"Exception type: {type(e).__name__}")
-        import traceback
-
         logger.error(f"Traceback:\n{traceback.format_exc()}")
         logger.error("=" * 80)
         return JsonResponse({"error": "Internal server error"}, status=500)

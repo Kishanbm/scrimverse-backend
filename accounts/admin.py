@@ -1,8 +1,14 @@
+import csv
+
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.http import HttpResponse
+from django.utils import timezone
 from django.utils.html import format_html
 
-from .models import HostProfile, PlayerProfile, Team, TeamJoinRequest, TeamMember, TeamStatistics, User
+from accounts.models import HostProfile, PlayerProfile, Team, TeamJoinRequest, TeamMember, TeamStatistics, User
+from tournaments.tasks import send_host_approved_email_task
 
 
 # Proxy model for Aadhar Verification (for dedicated admin interface)
@@ -176,11 +182,28 @@ class AadharVerificationAdmin(admin.ModelAdmin):
 
     def approve_verification(self, request, queryset):
         """Approve Aadhar verification for selected hosts"""
-        updated = queryset.update(verification_status="approved")
+        frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+        approved_count = 0
+
+        for host_profile in queryset:
+            if host_profile.verification_status != "approved":
+                host_profile.verification_status = "approved"
+                host_profile.save()
+                approved_count += 1
+
+                # 📧 SEND HOST APPROVAL EMAIL
+                send_host_approved_email_task.delay(
+                    user_email=host_profile.user.email,
+                    user_name=host_profile.user.username,
+                    host_name=host_profile.user.username,
+                    approved_at=timezone.now().strftime("%B %d, %Y at %I:%M %p"),
+                    host_dashboard_url=f"{frontend_url}/host/dashboard",
+                )
+
         self.message_user(
             request,
-            f"✅ Successfully approved {updated} host(s). They can now access their dashboard. "
-            f"Note: Use 'Verify Hosts' action separately to give them the verified badge.",
+            f"✅ Successfully approved {approved_count} host(s). They can now access their dashboard. "
+            f"Approval emails have been sent. Note: Use 'Verify Hosts' action separately to give them the verified badge.",  # noqa: E501
             level="success",
         )
 
@@ -210,12 +233,26 @@ class AadharVerificationAdmin(admin.ModelAdmin):
 class UserAdmin(BaseUserAdmin):
     """Enhanced User Admin"""
 
-    list_display = ["email", "username", "user_type_badge", "is_active", "is_staff", "created_at"]
-    list_filter = ["user_type", "is_staff", "is_active", ("created_at", admin.DateFieldListFilter)]
+    list_display = [
+        "email",
+        "username",
+        "user_type_badge",
+        "email_verified_badge",
+        "is_active",
+        "is_staff",
+        "created_at",
+    ]
+    list_filter = [
+        "user_type",
+        "is_email_verified",
+        "is_staff",
+        "is_active",
+        (("created_at", admin.DateFieldListFilter)),
+    ]
     search_fields = ["email", "username", "phone_number"]
     ordering = ["-created_at"]
 
-    actions = ["activate_users", "deactivate_users", "export_users_csv"]
+    actions = ["activate_users", "deactivate_users", "verify_emails", "export_users_csv"]
 
     fieldsets = BaseUserAdmin.fieldsets + (
         (
@@ -225,6 +262,9 @@ class UserAdmin(BaseUserAdmin):
                     "user_type",
                     "phone_number",
                     "profile_picture",
+                    "is_email_verified",
+                    "email_verification_token",
+                    "email_verification_sent_at",
                     "username_change_count",
                     "last_username_change",
                 )
@@ -253,6 +293,13 @@ class UserAdmin(BaseUserAdmin):
 
     user_type_badge.short_description = "Type"
 
+    def email_verified_badge(self, obj):
+        """Display email verification status as icon"""
+        return obj.is_email_verified
+
+    email_verified_badge.short_description = "Email Verified"
+    email_verified_badge.boolean = True  # This makes Django use the green checkmark / red X icons
+
     def activate_users(self, request, queryset):
         """Activate selected users"""
         updated = queryset.update(is_active=True)
@@ -267,17 +314,24 @@ class UserAdmin(BaseUserAdmin):
 
     deactivate_users.short_description = "Deactivate Users (Ban)"
 
+    def verify_emails(self, request, queryset):
+        """Manually verify emails for selected users"""
+        updated = queryset.update(is_email_verified=True, is_active=True)
+        self.message_user(
+            request,
+            f"✅ {updated} user(s) email verified and activated. They can now login.",
+            level="success",
+        )
+
+    verify_emails.short_description = "Verify Emails"
+
     def export_users_csv(self, request, queryset):
         """Export users to CSV"""
-        import csv
-
-        from django.http import HttpResponse
-
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="users.csv"'
 
         writer = csv.writer(response)
-        writer.writerow(["Email", "Username", "Type", "Phone", "Active", "Staff", "Created"])
+        writer.writerow(["Email", "Username", "Type", "Phone", "Email Verified", "Active", "Staff", "Created"])
 
         for user in queryset:
             writer.writerow(
@@ -286,6 +340,7 @@ class UserAdmin(BaseUserAdmin):
                     user.username,
                     user.user_type,
                     user.phone_number or "N/A",
+                    "Yes" if user.is_email_verified else "No",
                     "Yes" if user.is_active else "No",
                     "Yes" if user.is_staff else "No",
                     user.created_at,
@@ -356,11 +411,6 @@ class PlayerProfileAdmin(admin.ModelAdmin):
     reset_statistics.short_description = "Reset Statistics"
 
     def export_players_csv(self, request, queryset):
-        """Export players to CSV"""
-        import csv
-
-        from django.http import HttpResponse
-
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="players.csv"'
 
@@ -555,10 +605,28 @@ class HostProfileAdmin(admin.ModelAdmin):
 
     def approve_verification(self, request, queryset):
         """Approve Aadhar verification for selected hosts"""
-        updated = queryset.update(verification_status="approved")
+        frontend_url = settings.CORS_ALLOWED_ORIGINS[0]
+        approved_count = 0
+
+        for host_profile in queryset:
+            if host_profile.verification_status != "approved":
+                host_profile.verification_status = "approved"
+                host_profile.save()
+                approved_count += 1
+
+                # 📧 SEND HOST APPROVAL EMAIL
+                send_host_approved_email_task.delay(
+                    user_email=host_profile.user.email,
+                    user_name=host_profile.user.username,
+                    host_name=host_profile.user.username,
+                    approved_at=timezone.now().strftime("%B %d, %Y at %I:%M %p"),
+                    host_dashboard_url=f"{frontend_url}/host/dashboard",
+                )
+
         self.message_user(
             request,
-            f"{updated} host(s) Aadhar verification approved. Use 'Verify Hosts' to add verified badge separately.",
+            f"✅ {approved_count} host(s) Aadhar verification approved. Approval emails sent. "
+            f"Use 'Verify Hosts' to add verified badge separately.",
         )
 
     approve_verification.short_description = "✓ Approve Aadhar Verification"
@@ -575,10 +643,6 @@ class HostProfileAdmin(admin.ModelAdmin):
 
     def export_hosts_csv(self, request, queryset):
         """Export hosts to CSV"""
-        import csv
-
-        from django.http import HttpResponse
-
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="hosts.csv"'
 
@@ -701,10 +765,6 @@ class TeamAdmin(admin.ModelAdmin):
 
     def export_teams_csv(self, request, queryset):
         """Export teams to CSV"""
-        import csv
-
-        from django.http import HttpResponse
-
         response = HttpResponse(content_type="text/csv")
         response["Content-Disposition"] = 'attachment; filename="teams.csv"'
 

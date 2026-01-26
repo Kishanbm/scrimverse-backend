@@ -13,9 +13,10 @@ from django.utils import timezone
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
-from accounts.tasks import send_verification_email_task
+from accounts.tasks import send_verification_email_task, send_welcome_email_task
 
 logger = logging.getLogger(__name__)
 
@@ -76,22 +77,51 @@ class VerifyEmailView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, token):
+        logger.info(f"🔍 Email verification attempt with token: {token[:10]}...")
         try:
             # Find user with this token
             user = User.objects.get(email_verification_token=token)
+            logger.info(f"✅ Found user: {user.email} (verified: {user.is_email_verified}, active: {user.is_active})")
 
             # Check if already verified
             if user.is_email_verified:
-                return Response({"message": "Email is already verified. You can login now."}, status=status.HTTP_200_OK)
+                logger.info(f"⚠️ User {user.email} is already verified")
+
+                # Generate JWT tokens for auto-login (user clicking link again)
+                refresh = RefreshToken.for_user(user)
+                access_token = str(refresh.access_token)
+                refresh_token = str(refresh)
+
+                return Response(
+                    {
+                        "message": "Email is already verified! Your account is active.",
+                        "user_type": user.user_type,
+                        "already_verified": True,  # Flag to show different UI
+                        "user": {
+                            "email": user.email,
+                            "username": user.username,
+                            "user_type": user.user_type,
+                            "is_email_verified": user.is_email_verified,
+                            "is_active": user.is_active,
+                        },
+                        "tokens": {
+                            "access": access_token,
+                            "refresh": refresh_token,
+                        },
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
             # Check if token is expired (24 hours)
             if user.email_verification_sent_at:
                 time_since_sent = timezone.now() - user.email_verification_sent_at
                 if time_since_sent > timedelta(hours=24):
+                    logger.warning(f"⏰ Token expired for user {user.email} (sent {time_since_sent} ago)")
                     return Response(
                         {
                             "error": "Verification link has expired",
                             "message": "Please register again or request a new verification email",
+                            "user_type": user.user_type,  # Include user_type for frontend navigation
                         },
                         status=status.HTTP_400_BAD_REQUEST,
                     )
@@ -99,13 +129,11 @@ class VerifyEmailView(APIView):
             # ✅ ACTIVATE ACCOUNT
             user.is_email_verified = True
             user.is_active = True  # Activate the account
-            user.email_verification_token = None  # Clear token after verification
-            user.save(update_fields=["is_email_verified", "is_active", "email_verification_token"])
+            # Keep the token so we can show "already verified" message if they click again
+            user.save(update_fields=["is_email_verified", "is_active"])
+            logger.info(f"🎉 Successfully verified and activated user: {user.email}")
 
             # Send welcome email AFTER verification
-            from django.conf import settings
-
-            from accounts.tasks import send_welcome_email_task
 
             if user.user_type == "player":
                 dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/dashboard"
@@ -116,23 +144,32 @@ class VerifyEmailView(APIView):
                 user_email=user.email, user_name=user.username, dashboard_url=dashboard_url, user_type=user.user_type
             )
 
-            logger.info(f"Email verified and account activated for user: {user.email}")
+            logger.info(f"📧 Welcome email queued for user: {user.email}")
 
-            return Response(
-                {
-                    "message": "Email verified successfully! Your account is now active. You can login now.",
-                    "user": {
-                        "email": user.email,
-                        "username": user.username,
-                        "is_email_verified": user.is_email_verified,
-                        "is_active": user.is_active,
-                    },
+            # Generate JWT tokens for auto-login
+            refresh = RefreshToken.for_user(user)
+            access_token = str(refresh.access_token)
+            refresh_token = str(refresh)
+
+            response_data = {
+                "message": "Email verified successfully! Your account is now active. Redirecting to your dashboard...",
+                "user": {
+                    "email": user.email,
+                    "username": user.username,
+                    "user_type": user.user_type,  # Add user_type for frontend navigation
+                    "is_email_verified": user.is_email_verified,
+                    "is_active": user.is_active,
                 },
-                status=status.HTTP_200_OK,
-            )
+                "tokens": {
+                    "access": access_token,
+                    "refresh": refresh_token,
+                },
+            }
+            logger.info(f"📤 Sending success response: {response_data}")
+            return Response(response_data, status=status.HTTP_200_OK)
 
         except User.DoesNotExist:
-            logger.warning(f"Invalid verification token attempted: {token[:10]}...")
+            logger.warning(f"❌ Invalid verification token attempted: {token[:10]}...")
             return Response(
                 {
                     "error": "Invalid verification link",
@@ -141,7 +178,7 @@ class VerifyEmailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
-            logger.error(f"Error during email verification: {str(e)}")
+            logger.error(f"💥 Error during email verification: {str(e)}")
             return Response(
                 {"error": "An error occurred during verification"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

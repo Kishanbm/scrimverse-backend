@@ -9,6 +9,7 @@ from accounts.email_verification_views import (
     VerifyEmailView,
 )
 from accounts.leaderboard_views import LeaderboardView, TeamRankView
+from accounts.password_reset_views import RequestPasswordResetView, ResetPasswordView, VerifyResetTokenView
 from accounts.views import (
     CurrentHostProfileView,
     CurrentPlayerProfileView,
@@ -40,6 +41,10 @@ urlpatterns = [
     path("send-verification-email/", SendVerificationEmailView.as_view(), name="send-verification-email"),
     path("verify-email/<str:token>/", VerifyEmailView.as_view(), name="verify-email"),
     path("resend-verification/", PublicResendVerificationEmailView.as_view(), name="resend-verification"),
+    # Password Reset
+    path("request-password-reset/", RequestPasswordResetView.as_view(), name="request-password-reset"),
+    path("verify-reset-token/<str:token>/", VerifyResetTokenView.as_view(), name="verify-reset-token"),
+    path("reset-password/<str:token>/", ResetPasswordView.as_view(), name="reset-password"),
     # Profile Management (must be before router to avoid conflicts)
     path("me/", CurrentUserView.as_view(), name="current-user"),
     path("users/<int:pk>/", UserDetailView.as_view(), name="user-detail"),

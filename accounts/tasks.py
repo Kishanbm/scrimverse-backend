@@ -70,17 +70,6 @@ def process_team_invitation(team_id, player_id, invitation_type):
     try:
         team = Team.objects.get(id=team_id)
         player = User.objects.get(id=player_id)
-
-        # TODO: Send email notification
-        # from django.core.mail import send_mail
-        # send_mail(
-        #     subject=f"Team Invitation from {team.team_name}",
-        #     message=f"You've been invited to join {team.team_name}!",
-        #     from_email='noreply@scrimverse.com',
-        #     recipient_list=[player.email],
-        #     fail_silently=True,
-        # )
-
         logger.info("Team invitation processed successfully")
         return {"status": "success", "team": team.team_name, "player": player.username}
 
@@ -119,9 +108,9 @@ def send_verification_email_task(user_email: str, user_name: str, verification_u
 
 
 @shared_task(name="send_password_reset_email_task")
-def send_password_reset_email_task(user_email: str, user_name: str, reset_url: str):
+def send_password_reset_email_task(user_email: str, user_name: str, reset_url: str, user_type: str = ""):
     """Async task to send password reset email"""
-    return send_password_reset_email(user_email, user_name, reset_url)
+    return send_password_reset_email(user_email, user_name, reset_url, user_type)
 
 
 @shared_task(name="send_password_changed_email_task")

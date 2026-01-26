@@ -10,7 +10,7 @@ from rest_framework import generics, permissions
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from accounts.models import HostProfile, PlayerProfile, TeamMember
+from accounts.models import HostProfile, PlayerProfile, TeamMember, User
 from tournaments.models import Group, Match, MatchScore, Tournament, TournamentRegistration
 from tournaments.services import TournamentGroupService
 
@@ -683,8 +683,6 @@ class GetTeamPlayersView(generics.GenericAPIView):
         team_members = registration.team_members or []
 
         if team_members:
-            from accounts.models import User
-
             # Enrich with player profile data from team_members JSON
             for member in team_members:
                 # Try to get player by ID first, then by username
@@ -724,8 +722,6 @@ class GetTeamPlayersView(generics.GenericAPIView):
 
         # If no players from team_members, try to get from Team model
         elif registration.team:
-            from accounts.models import TeamMember
-
             # Get all team members from the Team
             team_members_qs = TeamMember.objects.filter(team=registration.team).select_related(
                 "user", "user__player_profile"
