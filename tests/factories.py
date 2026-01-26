@@ -120,7 +120,14 @@ class TournamentRegistrationFactory(DjangoModelFactory):
 
     @factory.lazy_attribute
     def team_members(self):
-        return [fake.name() for _ in range(4)]
+        return [
+            {
+                "username": fake.user_name(),
+                "is_registered": True,
+                "player_id": 1,  # Placeholder
+            }
+            for _ in range(4)
+        ]
 
     payment_status = False
     status = "pending"

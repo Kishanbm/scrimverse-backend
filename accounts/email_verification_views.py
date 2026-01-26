@@ -136,7 +136,7 @@ class VerifyEmailView(APIView):
             # Send welcome email AFTER verification
 
             if user.user_type == "player":
-                dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/dashboard"
+                dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/player/dashboard"
             else:
                 dashboard_url = f"{settings.CORS_ALLOWED_ORIGINS[0]}/host/dashboard"
 

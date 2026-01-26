@@ -452,7 +452,7 @@ def check_payment_status(request):
                                 send_registration_limit_reached_email_task.delay(
                                     host_email=tournament.host.user.email,
                                     host_name=tournament.host.user.username,
-                                    tournament_name=tournament.tournament_name,
+                                    tournament_name=tournament.title,
                                     total_registrations=registration_count,
                                     max_participants=tournament.max_participants,
                                     start_date=tournament.tournament_start.strftime("%B %d, %Y"),
@@ -764,8 +764,8 @@ def phonepe_callback(request):
                                     send_tournament_created_email_task.delay(
                                         host_email=host.user.email,
                                         host_name=host.user.username,
-                                        tournament_name=tournament.tournament_name,
-                                        game_name=tournament.game,
+                                        tournament_name=tournament.title,
+                                        game_name=tournament.game_name,
                                         start_date=start_date,
                                         max_participants=tournament.max_participants,
                                         plan_type=f"{tournament.plan_type} - {event_type}",

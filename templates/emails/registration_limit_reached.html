@@ -1,35 +1,41 @@
 {% extends "emails/base.html" %}
 
-{% block title %}Registration Limit Reached{% endblock %}
+{% block title %}FULL! {{ tournament_name }} Hit {{ max_participants }} Registrations!{% endblock %}
 
 {% block content %}
-<h2>Registration Limit Reached! 🎯</h2>
+<h1 style="color: #ffffff; font-size: 32px; margin-bottom: 20px;">{{ host_name }}, MISSION ACCOMPLISHED!</h1>
 
-<p>Hi {{ host_name }},</p>
+<p style="font-size: 18px; color: #c0ff00; font-weight: 700; margin-bottom: 20px;">{{ tournament_name }} is officially
+    full! All {{ max_participants }} slots filled.</p>
 
-<p>Great news! Your tournament <strong>{{ tournament_name }}</strong> has reached its maximum registration limit!</p>
+<p style="color: rgba(255, 255, 255, 0.8); margin-bottom: 30px;">Your event is stacked. The competition will be fierce.
+</p>
 
-<div class="info-box">
-    <p><strong>Tournament:</strong> {{ tournament_name }}</p>
-    <p><strong>Total Registrations:</strong> {{ total_registrations }} / {{ max_participants }}</p>
-    <p><strong>Start Date:</strong> {{ start_date }}</p>
-    <p><strong>Status:</strong> Full</p>
+<div style="margin-top: 30px;">
+    <h2 style="color: #ffffff; font-size: 20px; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px;">
+        Closeout steps:</h2>
+
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 15px; font-size: 16px;">
+        <strong style="color: #ffffff;">• RUN MATCHES SMOOTHLY FROM YOUR DASHBOARD</strong>
+    </p>
+
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 15px; font-size: 16px;">
+        <strong style="color: #ffffff;">• SHARE MATCH IDS AND PASSWORDS ON TIME</strong>
+    </p>
+
+    <p style="color: rgba(255, 255, 255, 0.9); margin-bottom: 15px; font-size: 16px;">
+        <strong style="color: #ffffff;">• UPDATE POINTS AS GAMES ARE COMPLETED</strong>
+    </p>
 </div>
 
-<p>Your tournament is now fully booked! New registrations are automatically closed.</p>
+<p style="color: rgba(255, 255, 255, 0.8); margin-top: 30px; margin-bottom: 30px; font-style: italic;">Everything you
+    need to manage the event is already in one place.</p>
 
-<p>What's next:</p>
-<ul style="margin: 15px 0; padding-left: 20px;">
-    <li>Review all registered participants</li>
-    <li>Prepare tournament brackets/groups</li>
-    <li>Send updates to participants if needed</li>
-</ul>
+<a href="{{ tournament_manage_url }}" class="button">MANAGE FULL TOURNAMENT</a>
 
-<a href="{{ tournament_manage_url }}" class="button">View Registrations</a>
-
-<div class="divider"></div>
-
-<p style="font-size: 14px; color: #6c757d;">
-    You can still manage registrations from your dashboard if needed.
-</p>
+<div style="border-top: 1px solid rgba(255, 255, 255, 0.1); margin-top: 40px; padding-top: 20px;">
+    <p style="color: #ffffff; font-weight: 700; margin-bottom: 5px;">THE SCRIMVERSE TEAM</p>
+    <p style="color: #c0ff00; font-size: 12px; font-weight: 900; text-transform: uppercase; margin: 0;">Where Practice
+        Meets Passion</p>
+</div>
 {% endblock %}

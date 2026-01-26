@@ -120,6 +120,10 @@ class TournamentListView(generics.ListAPIView):
         elif category == "official":
             queryset = queryset.filter(plan_type__in=["featured", "premium"])
 
+        search = self.request.query_params.get("search", None)
+        if search:
+            queryset = queryset.filter(Q(title__icontains=search) | Q(game_name__icontains=search))
+
         return queryset
 
 
@@ -1398,7 +1402,7 @@ class EndTournamentView(generics.GenericAPIView):
         send_tournament_completed_email_task.delay(
             host_email=tournament.host.user.email,
             host_name=tournament.host.user.username,
-            tournament_name=tournament.tournament_name,
+            tournament_name=tournament.title,
             completed_at=timezone.now().strftime("%B %d, %Y at %I:%M %p"),
             total_participants=total_participants,
             total_matches=total_matches,
@@ -1553,12 +1557,18 @@ class StartTournamentView(generics.GenericAPIView):
         if tournament.status != "upcoming":
             return Response({"error": f"Cannot start tournament. Current status: {tournament.status}"}, status=400)
 
-        # Auto-confirm any pending teams before starting
-        TournamentRegistration.objects.filter(tournament=tournament, status="pending").update(status="confirmed")
-
         # Check if starting early
         now = timezone.now()
-        is_early = now < tournament.tournament_start
+        if now < tournament.tournament_start:
+            return Response(
+                {
+                    "error": f"Cannot start tournament early. Scheduled start: {tournament.tournament_start.strftime('%B %d, %Y at %I:%M %p')}"  # noqa: E501
+                },
+                status=400,
+            )
+
+        # Auto-confirm any pending teams before starting
+        TournamentRegistration.objects.filter(tournament=tournament, status="pending").update(status="confirmed")
 
         # Update tournament
         tournament.status = "ongoing"
@@ -1571,14 +1581,13 @@ class StartTournamentView(generics.GenericAPIView):
 
         tournament.save(update_fields=["status", "current_round", "round_status"])
 
-        logger.info(f"Tournament started - ID: {tournament.id}, Title: {tournament.title}, Early start: {is_early}")
+        logger.info(f"Tournament started - ID: {tournament.id}, Title: {tournament.title}")
 
         return Response(
             {
                 "message": "Tournament started successfully",
                 "status": tournament.status,
                 "current_round": tournament.current_round,
-                "is_early_start": is_early,
                 "scheduled_start": tournament.tournament_start.isoformat() if tournament.tournament_start else None,
             }
         )

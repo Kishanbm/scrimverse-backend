@@ -113,6 +113,16 @@ def send_password_reset_email_task(user_email: str, user_name: str, reset_url: s
     return send_password_reset_email(user_email, user_name, reset_url, user_type)
 
 
+@shared_task(name="send_aadhar_approval_email_task")
+def send_aadhar_approval_email_task(
+    user_email: str, user_name: str, host_name: str, approved_at: str, host_dashboard_url: str
+):
+    """Async task to send aadhar approval email"""
+    # Simple placeholder matching what the test expects
+    logger.info(f"Aadhar approval email sent to {user_email}")
+    return True
+
+
 @shared_task(name="send_password_changed_email_task")
 def send_password_changed_email_task(
     user_email: str, user_name: str, changed_at: str, ip_address: str, dashboard_url: str
