@@ -368,7 +368,7 @@ LOGGING = {
 # ==================== EMAIL CONFIGURATION ====================
 
 # Use .strip() to prevent idna/hostname errors from extra spaces
-EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend").strip()
+EMAIL_BACKEND = config("EMAIL_BACKEND", default="scrimverse.email_backends.IPv4EmailBackend").strip()
 EMAIL_HOST = config("EMAIL_HOST", default="email-smtp.ap-south-1.amazonaws.com").strip()
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
