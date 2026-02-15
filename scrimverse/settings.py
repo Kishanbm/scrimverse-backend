@@ -198,12 +198,14 @@ CSRF_TRUSTED_ORIGINS = [o for o in config("CSRF_TRUSTED_ORIGINS", default="http:
 
 # Redis connection settings - prioritize REDIS_URL from environment
 REDIS_URL = config("REDIS_URL", default=None)
+if REDIS_URL:
+    REDIS_URL = REDIS_URL.strip()
 
 if not REDIS_URL:
-    REDIS_HOST = config("REDIS_HOST", default="localhost")
+    REDIS_HOST = config("REDIS_HOST", default="localhost").strip()
     REDIS_PORT = config("REDIS_PORT", default=6379, cast=int)
     REDIS_DB = config("REDIS_DB", default=0, cast=int)
-    REDIS_PASSWORD = config("REDIS_PASSWORD", default="")
+    REDIS_PASSWORD = config("REDIS_PASSWORD", default="").strip()
     
     # Build Redis URL
     REDIS_URL = f"redis://{':' + REDIS_PASSWORD + '@' if REDIS_PASSWORD else ''}{REDIS_HOST}:{REDIS_PORT}"
@@ -365,18 +367,18 @@ LOGGING = {
 
 # ==================== EMAIL CONFIGURATION ====================
 
-# Email Backend Configuration (AWS SES)
-EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = config("EMAIL_HOST", default="email-smtp.ap-south-2.amazonaws.com")
+# Use .strip() to prevent idna/hostname errors from extra spaces
+EMAIL_BACKEND = config("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend").strip()
+EMAIL_HOST = config("EMAIL_HOST", default="email-smtp.ap-south-1.amazonaws.com").strip()
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
-EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
-EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="").strip()
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="").strip()
 
 # Email Addresses
-DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@scrimverse.com")
-SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@scrimverse.com")
-ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@scrimverse.com")
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="noreply@scrimverse.com").strip()
+SUPPORT_EMAIL = config("SUPPORT_EMAIL", default="support@scrimverse.com").strip()
+ADMIN_EMAIL = config("ADMIN_EMAIL", default="admin@scrimverse.com").strip()
 
 # Email Settings
 EMAIL_TIMEOUT = 10  # seconds
