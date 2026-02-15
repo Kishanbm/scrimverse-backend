@@ -20,7 +20,7 @@ SECRET_KEY = config("SECRET_KEY", default="django-insecure-change-this-in-produc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config("DEBUG", default=True, cast=bool)
 
-ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1").split(",")
+ALLOWED_HOSTS = config("ALLOWED_HOSTS", default="localhost,127.0.0.1,.onrender.com,.scrimverse.com").split(",")
 
 # Application definition
 INSTALLED_APPS = [
@@ -187,12 +187,12 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = [o for o in config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000").split(",") if o]
+CORS_ALLOWED_ORIGINS = [o for o in config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000,https://scrimverse.com,https://www.scrimverse.com").split(",") if o]
 
 CORS_ALLOW_CREDENTIALS = True
 
 # CSRF Settings
-CSRF_TRUSTED_ORIGINS = [o for o in config("CSRF_TRUSTED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000").split(",") if o]
+CSRF_TRUSTED_ORIGINS = [o for o in config("CSRF_TRUSTED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000,https://scrimverse.com,https://www.scrimverse.com").split(",") if o]
 
 # ==================== REDIS CACHE CONFIGURATION ====================
 
