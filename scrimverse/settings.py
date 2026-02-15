@@ -6,6 +6,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from decouple import config
+import dj_database_url
 
 # Build paths inside the project
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -40,6 +41,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -71,6 +73,7 @@ TEMPLATES = [
 WSGI_APPLICATION = "scrimverse.wsgi.application"
 
 # Database
+# Database
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.postgresql",
@@ -79,11 +82,16 @@ DATABASES = {
         "PASSWORD": config("DB_PASSWORD", default=""),
         "HOST": config("DB_HOST", default="localhost"),
         "PORT": config("DB_PORT", default="5432"),
-        "OPTIONS": {
-            # psycopg3 is now default in Django 5.0+
-        },
     }
 }
+
+# Render Database Configuration
+if config("DATABASE_URL", default=None):
+    DATABASES["default"] = dj_database_url.config(
+        default=config("DATABASE_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 
 # Custom User Model
 AUTH_USER_MODEL = "accounts.User"
@@ -140,9 +148,13 @@ if USE_S3:
     MEDIA_URL = f"https://{AWS_S3_CUSTOM_DOMAIN}/media/"
 
 else:
-    # Local file storage (Development)
+    # Local file storage (Development) or Render (Production without S3)
     STATIC_URL = "static/"
     STATIC_ROOT = BASE_DIR / "staticfiles"
+
+    # Use Whitenoise for static files in production if S3 is not used
+    if not DEBUG:
+        STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
     MEDIA_URL = "media/"
     MEDIA_ROOT = BASE_DIR / "media"
