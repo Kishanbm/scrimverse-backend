@@ -251,9 +251,9 @@ CELERY_TASK_SOFT_TIME_LIMIT = 25 * 60  # 25 minutes
 CELERY_WORKER_SEND_TASK_EVENTS = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
-# Execute tasks locally if in DEBUG mode (no worker needed)
-if DEBUG:
-    CELERY_TASK_ALWAYS_EAGER = True
+# Execute tasks locally if in DEBUG mode or explicitly requested (no worker needed)
+CELERY_TASK_ALWAYS_EAGER = config("CELERY_TASK_ALWAYS_EAGER", default=DEBUG, cast=bool)
+if CELERY_TASK_ALWAYS_EAGER:
     CELERY_TASK_EAGER_PROPAGATES = True
 
 # ==================== LOGGING CONFIGURATION ====================
