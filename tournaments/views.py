@@ -234,8 +234,9 @@ class TournamentCreateView(generics.CreateAPIView):
                     start_date=tournament.tournament_start.strftime("%B %d, %Y at %I:%M %p"),
                     max_participants=tournament.max_participants,
                     plan_type=f"{plan_type.title()} - {event_mode.title()}",
-                    tournament_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}",  # noqa: E501
-                    tournament_manage_url=f"{config('CORS_ALLOWED_ORIGINS', default='http://localhost:3000').split(',')[0]}/tournaments/{tournament.id}/manage",  # noqa: E501
+                    plan_type=f"{plan_type.title()} - {event_mode.title()}",
+                    tournament_url=f"{settings.FRONTEND_URL}/tournaments/{tournament.id}",
+                    tournament_manage_url=f"{settings.FRONTEND_URL}/tournaments/{tournament.id}/manage",
                 )
                 logger.info(f"Tournament created email task queued for {request.user.email}")
             except Exception as e:
@@ -261,7 +262,7 @@ class TournamentCreateView(generics.CreateAPIView):
         amount_paisa = int(amount * 100)
 
         # Prepare redirect URL
-        frontend_url = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(",")[0]
+        frontend_url = settings.FRONTEND_URL
         redirect_url = f"{frontend_url}/host/dashboard?payment_status=check&order_id={merchant_order_id}"
 
         # Store tournament data as JSON (serialize files as paths if they exist)
@@ -804,7 +805,7 @@ class TournamentRegistrationCreateView(generics.CreateAPIView):
             amount_paisa = int(amount * 100)
 
             # Prepare redirect URL
-            frontend_url = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(",")[0]
+            frontend_url = settings.FRONTEND_URL
             redirect_url = f"{frontend_url}/player/dashboard?payment_status=check&order_id={merchant_order_id}"
 
             # Prepare metadata - udf3 has 256 char limit, so store registration data separately

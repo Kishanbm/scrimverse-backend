@@ -6,6 +6,9 @@
 venv/
 env/
 ENV/
+
+./venv
+
 __pycache__/
 *.pyc
 *.pyo
@@ -51,3 +54,4 @@ celerybeat-schedule
 celerybeat-schedule-shm
 celerybeat-schedule-wal
 CELERY_SETUP.md
+

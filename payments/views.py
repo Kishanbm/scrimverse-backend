@@ -120,7 +120,7 @@ def initiate_payment(request):
         amount_paisa = int(data["amount"] * 100)
 
         # Prepare redirect URL
-        frontend_url = config("CORS_ALLOWED_ORIGINS", default="http://localhost:3000").split(",")[0]
+        frontend_url = settings.FRONTEND_URL
         redirect_url = data.get("redirect_url") or f"{frontend_url}/payment/callback"
 
         # Prepare metadata

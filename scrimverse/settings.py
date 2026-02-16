@@ -194,6 +194,9 @@ CORS_ALLOW_CREDENTIALS = True
 # CSRF Settings
 CSRF_TRUSTED_ORIGINS = [o for o in config("CSRF_TRUSTED_ORIGINS", default="http://localhost:3000,http://127.0.0.1:3000,https://scrimverse.com,https://www.scrimverse.com").split(",") if o]
 
+# Frontend URL for redirects (e.g., Payment callbacks)
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000")
+
 # ==================== REDIS CACHE CONFIGURATION ====================
 
 # Redis connection settings - prioritize REDIS_URL from environment
