@@ -208,6 +208,9 @@ class TournamentCreateView(generics.CreateAPIView):
         # Get dynamic price from database (or fallback to defaults)
         amount = PlanPricing.get_price(event_mode, plan_type)
 
+        # BYPASS: Skip payment for all hosts (temporary - remove this line to re-enable payments)
+        amount = 0
+
         # ✅ CHECK IF FREE PLAN (amount <= 0)
         if amount <= 0:
             # Skip payment, create tournament directly

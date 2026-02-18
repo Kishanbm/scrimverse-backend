@@ -152,6 +152,9 @@ class Tournament(models.Model):
         default=dict, blank=True, help_text="Placement points mapping: {rank: points}. Example: {'1': 15, '2': 12, '3': 10}"
     )
 
+    # Live Stream
+    live_link = models.URLField(blank=True, null=True, help_text="YouTube or streaming link for live coverage")
+
     # System Flags
     use_groups_system = models.BooleanField(
         default=True, help_text="Use new groups and matches system (False for legacy tournaments)"
