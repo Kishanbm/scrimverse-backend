@@ -102,6 +102,13 @@ class Tournament(models.Model):
     # Example: {"1": "Qualifiers", "2": "Semi Finals", "3": "Grand Finals"}
     # If not specified, defaults to "Round 1", "Round 2", etc.
 
+    # Round Dates & Mode (online/offline)
+    round_dates = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Per-round dates and mode: {'1': {'start_date': '2026-02-24', 'end_date': '2026-02-25', 'mode': 'online'}, ...}",
+    )
+
     # Round Management
     current_round = models.IntegerField(default=0, help_text="Current active round (0 = not started)")
     round_status = models.JSONField(

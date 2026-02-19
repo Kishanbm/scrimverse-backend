@@ -614,11 +614,23 @@ class TournamentRegistrationInitiateView(APIView):
             # Get tournament
             tournament = Tournament.objects.get(id=tournament_id)
             
+            # For free tournaments, create the Team now so registration.team is linked
+            # This ensures invites will use the same team as the registration
+            team = None
+            if float(tournament.entry_fee) == 0:
+                from accounts.models import Team as TeamModel
+                team = TeamModel.objects.create(
+                    name=team_name,
+                    captain=request.user,
+                    is_temporary=True
+                )
+            
             # Create TournamentRegistration with new status 'pending_payment'
             # (Note: if status doesn't exist in choices, we use an appropriate existing status)
             registration = TournamentRegistration.objects.create(
                 tournament=tournament,
                 player=player_profile,
+                team=team,
                 team_name=team_name,
                 status='pending',  # Using 'pending' as interim status
                 payment_status=False,
@@ -679,13 +691,17 @@ class TournamentRegistrationInitiateView(APIView):
                             invite_token = str(uuid4())
                             invite_expires = timezone.now() + timezone.timedelta(days=7)
                             
-                            # Try to get or create a team for this registration
-                            # NOTE: Team.captain must be a User, not PlayerProfile
-                            team, _ = Team.objects.get_or_create(
-                                name=registration.team_name,
-                                captain=player_profile.user,  # Use player_profile.user, not player_profile
-                                defaults={'is_temporary': False}
-                            )
+                            # Use the team associated with the registration if available
+                            # This ensures the TournamentRegistration.team_id matches the team
+                            # used for invites so that team members see the registration.
+                            team = registration.team
+                            # If for some reason the registration has no team, fall back to creating one
+                            if not team:
+                                team, _ = Team.objects.get_or_create(
+                                    name=registration.team_name,
+                                    captain=player_profile.user,  # Use player_profile.user, not player_profile
+                                    defaults={'is_temporary': False},
+                                )
                             
                             # Create join request with invite token
                             join_request = TeamJoinRequest.objects.create(
@@ -1691,11 +1707,17 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
         instance = self.get_object()
 
         # Only allow updating specific fields
-        allowed_fields = ["title", "description", "rules", "round_names", "rounds"]
+        allowed_fields = ["title", "description", "rules", "round_names", "rounds", "round_dates", "prize_distribution", "banner_image"]
         data = request.data.copy()
 
         # Filter to only allowed fields
         filtered_data = {k: v for k, v in data.items() if k in allowed_fields}
+
+        # Handle file upload for banner_image
+        if "banner_image" in request.FILES:
+            filtered_data["banner_image"] = request.FILES["banner_image"]
+            # Pass the instance's plan_type so validate_banner_image sees the correct plan
+            filtered_data["plan_type"] = instance.plan_type
 
         # Handle JSON fields
         if "round_names" in filtered_data:
@@ -1712,11 +1734,27 @@ class UpdateTournamentFieldsView(generics.UpdateAPIView):
             except (json.JSONDecodeError, TypeError):
                 pass  # Let serializer validation handle invalid JSON
 
+        if "round_dates" in filtered_data:
+            try:
+                if isinstance(filtered_data["round_dates"], str):
+                    filtered_data["round_dates"] = json.loads(filtered_data["round_dates"])
+            except (json.JSONDecodeError, TypeError):
+                pass  # Let serializer validation handle invalid JSON
+
+        if "prize_distribution" in filtered_data:
+            try:
+                if isinstance(filtered_data["prize_distribution"], str):
+                    filtered_data["prize_distribution"] = json.loads(filtered_data["prize_distribution"])
+            except (json.JSONDecodeError, TypeError):
+                pass  # Let serializer validation handle invalid JSON
+
         logger.info(f"Updating tournament {instance.id} with fields: {list(filtered_data.keys())}")
         if "rounds" in filtered_data:
             logger.info(f"New rounds data: {filtered_data['rounds']}")
         if "round_names" in filtered_data:
             logger.info(f"New round_names data: {filtered_data['round_names']}")
+        if "round_dates" in filtered_data:
+            logger.info(f"New round_dates data: {filtered_data['round_dates']}")
 
         serializer = self.get_serializer(instance, data=filtered_data, partial=True)
         serializer.is_valid(raise_exception=True)

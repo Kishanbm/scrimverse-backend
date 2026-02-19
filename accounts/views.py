@@ -1100,10 +1100,41 @@ class TeamViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def my_invites(self, request):
-        """Get pending invitations for the current user"""
+        """Get pending team-management invitations for the current user"""
         invites = TeamJoinRequest.objects.filter(player=request.user, status="pending", request_type="invite")
         serializer = TeamJoinRequestSerializer(invites, many=True)
         return Response(serializer.data)
+
+    @action(detail=False, methods=["get"])
+    def my_tournament_invites(self, request):
+        """
+        Get pending tournament registration invites matched by the logged-in user's email.
+        These are invites sent by captains during tournament registration where
+        invite_token is set but player is not yet linked (player=None or invited_email matches).
+        """
+        email = request.user.email
+        invites = TeamJoinRequest.objects.filter(
+            invited_email__iexact=email,
+            status="pending",
+            invite_token__isnull=False,
+        ).select_related(
+            "team",
+            "tournament_registration__tournament",
+            "tournament_registration__player__user",
+        )
+        data = []
+        for inv in invites:
+            reg = inv.tournament_registration
+            tournament = reg.tournament if reg else None
+            captain_name = reg.player.user.username if (reg and reg.player) else "Unknown"
+            data.append({
+                "invite_token": str(inv.invite_token),
+                "team_name": inv.team.name if inv.team else "",
+                "tournament_name": tournament.title if tournament else "",
+                "captain_name": captain_name,
+                "invite_expires_at": inv.invite_expires_at,
+            })
+        return Response(data)
 
     @action(detail=False, methods=["post"])
     def handle_invite(self, request):
