@@ -85,14 +85,19 @@ class TournamentListView(generics.ListAPIView):
 
         if not status_param and not game_param and not category_param and not event_mode_param:
             cache_key = "tournaments:list:all"
-            cached_data = cache.get(cache_key)
-
-            if cached_data:
-                return Response(cached_data)
+            # Only use cache for unauthenticated users — authenticated users
+            # need per-user data (is_registered) so bypass cache for them.
+            if not request.user or not request.user.is_authenticated:
+                cached_data = cache.get(cache_key)
+                if cached_data:
+                    return Response(cached_data)
 
             queryset = self.filter_queryset(self.get_queryset())
             serializer = self.get_serializer(queryset, many=True)
-            cache.set(cache_key, serializer.data, timeout=300)  # 5 minutes
+
+            # Only cache for unauthenticated requests
+            if not request.user or not request.user.is_authenticated:
+                cache.set(cache_key, serializer.data, timeout=300)  # 5 minutes
             return Response(serializer.data)
 
         # Don't cache filtered results

@@ -1495,20 +1495,41 @@ class AcceptInviteView(APIView):
 
             logger.info(f"Invite {token} accepted by user {user.username}")
 
-            # 2. Add user to team (create/update TeamMember)
+            # 2. Add user to team (check if already exists to avoid duplicates)
             team = invite.team
-            team_member, created = TeamMember.objects.get_or_create(
-                team=team,
-                username=user.username,
-                defaults={
-                    "user": user,
-                    "is_captain": False,
-                },
-            )
-            if not created and not team_member.user:
-                # Update the link if we're filling it in for the first time
-                team_member.user = user
-                team_member.save(update_fields=["user"])
+            # First check if user is already in team by user field
+            existing_member = TeamMember.objects.filter(team=team, user=user).first()
+            if existing_member:
+                # User already exists as team member, don't create duplicate
+                team_member = existing_member
+                logger.info(f"User {user.username} already exists in team {team.name}, not duplicating")
+            else:
+                # Check if exists by username only (in case user field wasn't set initially)
+                existing_by_username = TeamMember.objects.filter(team=team, username=user.username).first()
+                if existing_by_username:
+                    # Update the user field on existing entry
+                    existing_by_username.user = user
+                    existing_by_username.save(update_fields=['user'])
+                    team_member = existing_by_username
+                    logger.info(f"Updated user field for {user.username} in team {team.name}")
+                else:
+                    # Create new member entry
+                    team_member = TeamMember.objects.create(
+                        team=team,
+                        user=user,
+                        username=user.username,
+                        is_captain=False,
+                    )
+                    logger.info(f"Created new team member for {user.username} in team {team.name}")
+            
+            # Clean up any duplicate team member entries (keep one, prefer captain)
+            all_members = TeamMember.objects.filter(team=team, user=user).order_by('-is_captain', 'id')
+            if all_members.count() > 1:
+                # Keep the first one (highest is_captain), delete the rest
+                to_delete = list(all_members[1:])
+                for duplicate in to_delete:
+                    logger.info(f"Removing duplicate team member entry for {user.username} in team {team.name}")
+                    duplicate.delete()
 
             logger.info(f"User {user.username} added to team {team.name}")
 

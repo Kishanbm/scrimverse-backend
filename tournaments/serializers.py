@@ -209,7 +209,7 @@ class TournamentListSerializer(serializers.ModelSerializer):
         )
 
     def get_is_registered(self, obj):
-        """Check if current user is CONFIRMED registered for this tournament (not pending payment)"""
+        """Check if current user is CONFIRMED registered for this tournament (as captain or team member)"""
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return False
@@ -217,18 +217,25 @@ class TournamentListSerializer(serializers.ModelSerializer):
         if not hasattr(request.user, "player_profile"):
             return False
 
-        # Avoid local import if possible, but TournamentRegistration is needed
         from tournaments.models import TournamentRegistration
 
-        # Only return True if status is 'confirmed' (not 'pending_payment' or 'pending')
-        return TournamentRegistration.objects.filter(
-            tournament=obj, 
+        # Check if user is the captain with a confirmed registration
+        if TournamentRegistration.objects.filter(
+            tournament=obj,
             player=request.user.player_profile,
+            status='confirmed'
+        ).exists():
+            return True
+
+        # Check if user is a member of any confirmed team in this tournament
+        return TournamentRegistration.objects.filter(
+            tournament=obj,
+            team__members__user=request.user,
             status='confirmed'
         ).exists()
 
     def get_user_registration_status(self, obj):
-        """Return the actual registration status (pending_payment, confirmed, rejected, etc.) or None"""
+        """Return the actual registration status (pending_payment, confirmed, rejected, etc.) or check if registered via team invite"""
         request = self.context.get("request")
         if not request or not request.user or not request.user.is_authenticated:
             return None
@@ -238,12 +245,25 @@ class TournamentListSerializer(serializers.ModelSerializer):
 
         from tournaments.models import TournamentRegistration
         
+        # Check if user is the captain (has direct TournamentRegistration)
         reg = TournamentRegistration.objects.filter(
             tournament=obj,
             player=request.user.player_profile
         ).first()
         
-        return reg.status if reg else None
+        if reg:
+            return reg.status
+        
+        # Check if user is a team member of any team registered in this tournament
+        is_team_member = TournamentRegistration.objects.filter(
+            tournament=obj,
+            team__members__user=request.user
+        ).exclude(status='rejected').exists()
+        
+        if is_team_member:
+            return 'confirmed'  # They're registered via accepted team invite
+        
+        return None
 
     def get_host(self, obj):
         return {"id": obj.host.id, "username": obj.host.user.username}
@@ -696,6 +716,7 @@ class TournamentRegistrationInitSerializer(serializers.Serializer):
         
         # Check if captain (current user) is already registered
         from accounts.models import PlayerProfile
+        from django.db import models as django_models
         player_profile = request.user.player_profile
         existing = TournamentRegistration.objects.filter(
             tournament=tournament,
@@ -705,6 +726,19 @@ class TournamentRegistrationInitSerializer(serializers.Serializer):
         if existing:
             raise serializers.ValidationError(
                 {"error": "You are already registered for this tournament."}
+            )
+        
+        # Also check if user is already a member of any team in this tournament
+        # (they may have accepted an invite for a team in this tournament)
+        already_in_team = TournamentRegistration.objects.filter(
+            tournament=tournament
+        ).filter(
+            django_models.Q(team__members__user=request.user)
+        ).exclude(status="rejected").exists()
+        
+        if already_in_team:
+            raise serializers.ValidationError(
+                {"error": "You are already registered for this tournament via an accepted team invite. You cannot register separately."}
             )
         
         # Verify that captain's email is not in the teammate emails

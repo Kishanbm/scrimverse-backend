@@ -411,22 +411,25 @@ class TeamSerializer(serializers.ModelSerializer):
     overall_stats = serializers.SerializerMethodField()
 
     def get_members(self, obj):
-        """Get all team members INCLUDING the captain"""
+        """Get all team members INCLUDING the captain, excluding captain from TeamMember list to avoid duplication"""
         members_list = []
         
-        # Add captain first
+        # Add captain first as a unified entry
         captain_member = {
             'id': obj.captain.id,
             'username': obj.captain.username,
             'email': obj.captain.email,
             'role': 'captain',
+            'is_captain': True,
             'join_date': obj.created_at.isoformat() if obj.created_at else None,
         }
         members_list.append(captain_member)
         
-        # Add other team members
-        from accounts.serializers import TeamMemberSerializer
-        other_members_data = TeamMemberSerializer(obj.members.all(), many=True).data
+        # Add non-captain team members only (exclude captain's TeamMember entry to avoid showing them twice)
+        other_members = obj.members.exclude(
+            username=obj.captain.username
+        )
+        other_members_data = TeamMemberSerializer(other_members, many=True).data
         members_list.extend(other_members_data)
         
         return members_list
